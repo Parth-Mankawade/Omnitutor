@@ -106,7 +106,7 @@ multimodal/
 │     └─ src/  llm.ts  embed.ts  retrieve.ts  tutor.ts  quiz.ts  bkt.ts
 │              ingest/{pdf,pptx,video,index}.ts
 ├─ tools/                          (added in their modules)
-│  ├─ smoke/                       Gemini API smoke tests (Module 1)
+│  ├─ smoke/                       @sc/smoke — Gemini smoke tests + list-models (Module 1)
 │  ├─ eval/                        ragas.py, score.ts, testset.json (Module 15)
 │  └─ sim/                         simulated students (Module 15)
 ├─ data/uploads/                   uploaded originals (gitignored)
@@ -123,20 +123,39 @@ Workspace packages export TypeScript source directly (`"exports": "./src/index.t
 
 ## 5. Data model (Prisma)
 
+Source of truth: `packages/db/prisma/schema.prisma` (commented). Summary:
+
 ```
-Course ─┬─< Source (type PDF|PPTX|VIDEO, path, status PENDING|PROCESSING|READY|FAILED, error?)
-        │       └─< Chunk (kind TEXT|FIGURE|SLIDE|TRANSCRIPT, content,
-        │                  page? | slide? | tStart?,tEnd?, embedding Float[768], topicId?)
-        └─< Topic (name, description, prereqIds String[])
-                 └─< Question (type MCQ|SHORT|NUMERIC, difficulty 1-3, stem, options Json,
-                               answer Json, distractorMisconceptions Json,
-                               sourceChunkIds String[], verified Bool, stemHash)
-Learner ─┬─< Mastery (topicId, p, n)                      @@unique([learnerId, topicId])
-         ├─< MasteryEvent (topicId, before, after, source QUIZ|CHAT, createdAt)
-         ├─< Assessment (kind DIAGNOSTIC|QUIZ|MOCK, scopeTopicIds, report Json)
-         │        └─< Attempt (questionId, response, correct, feedback Json, misconception?)
-         └─< ChatMessage (role, content, citations Json, coverage)
+Course ─┬─< Source (type PDF|PPTX|VIDEO, filename, mimeType, sizeBytes, path,
+        │           status PENDING|PROCESSING|READY|FAILED, error?, progressDone/Total,
+        │           pageCount?, durationSec?, geminiFileName/Uri/ExpiresAt?)
+        │       └─< Chunk (kind TEXT|FIGURE|SLIDE|TRANSCRIPT, seq, title?, content,
+        │                  page? | slide? | tStart?,tEnd?, conceptLabels[], embedding Float[768], topicId?)
+        ├─< Topic (seq, name, description, prereqIds[], embedding Float[768])
+        │        └─< Question (type MCQ|SHORT|NUMERIC, difficulty 1-3, stem, stemHash, options?, answer,
+        │                      distractorMisconceptions?, explanation, sourceChunkIds[], verified,
+        │                      verifierAnswer?, assessmentId?, position?)
+        ├─< Assessment (learnerId, kind DIAGNOSTIC|QUIZ|MOCK, status IN_PROGRESS|SUBMITTED,
+        │               scopeTopicIds[], report?, submittedAt?)
+        │        └─< Attempt (questionId, response, correct, score 0..1, feedback, misconception?)
+        │                                                        @@unique([assessmentId, questionId])
+        └─< ChatMessage (learnerId, role USER|ASSISTANT, content, blocks?, coverage?, refused, topScore?)
+Learner ─┬─< Mastery (topicId, p=0.3, n=0)                       @@unique([learnerId, topicId])
+         └─< MasteryEvent (topicId, before, after, source QUIZ|CHAT, attemptId?, chatMessageId?)
 ```
+
+**JSON shapes:**
+- `answer`: MCQ `{index}` · NUMERIC `{value, unit?}` · SHORT `{reference, keyPoints[]}`
+- `response`: `{index}` · `{value}` · `{text}`
+- `distractorMisconceptions`: `{"<option index>": "<label>"}`
+- `feedback`: `{text, citations: Citation[]}`
+- `blocks`: `[{text, origin, citations: Citation[]}]`. Citations are snapshotted, so chat history survives re-ingestion.
+
+**Delete behaviour:**
+- Deleting a course cascades to everything under it.
+- Deleting a source deletes its chunks.
+- Deleting a topic untags its chunks and deletes its questions, mastery and events. So **build topics once, before learners start**.
+- Deleting a learner deletes all of their data.
 
 **Citation invariant:** every chunk has exactly one locator. PDF chunks have `page`, slide chunks have `slide`, video chunks have `tStart`/`tEnd`. A citation is a `chunkId`, and the UI resolves it to `{sourceId, locator, excerpt}`.
 
@@ -291,5 +310,13 @@ curl localhost:3000/api/health
 | `npm run db:up` / `db:down` | Start or stop the Postgres container |
 | `npm run db:generate` | Regenerate the Prisma client. **On Windows, stop the dev server first** (it locks the engine DLL). |
 | `npm run db:status` | Prisma migration status, which also confirms the CLI can reach the DB |
+| `npm run db:migrate -- --name <x>` | Create + apply a migration after editing the schema (stop dev first) |
+| `npm run db:seed` | Idempotent seed: `demo-course`, `demo-learner` |
+| `npm run db:verify` | 12 schema behaviour checks on a throwaway course |
+| `npm run db:studio` | Prisma's table browser (alternative to Beekeeper) |
+| `npm run smoke [-- json pdf slides video embed]` | Gemini smoke test (all checks, or the named ones) |
+| `npm run models:list` | List models available to `APP_GEMINI_API_KEY` |
+
+**Windows:** stop the dev server before `npm install` or `db:generate` (Prisma's engine DLL is locked while it runs).
 
 **DB GUI (Beekeeper, DBeaver, etc.):** PostgreSQL · host `localhost` · port `5434` · user `study` · password `study` · database `study`.

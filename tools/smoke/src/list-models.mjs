@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { GoogleGenAI } from "@google/genai";
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 process.loadEnvFile(path.join(root, ".env"));
 const apiKey = process.env.APP_GEMINI_API_KEY;
 if (!apiKey) throw new Error("APP_GEMINI_API_KEY missing in .env");

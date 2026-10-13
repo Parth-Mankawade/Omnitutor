@@ -26,3 +26,6 @@ __pycache__/
 *.pem
 npm-debug.log*
 coverage/
+
+# smoke-test video fixture
+/tools/smoke/fixtures/*.mp4

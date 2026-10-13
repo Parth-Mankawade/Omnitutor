@@ -4,7 +4,8 @@
   "packageManager": "npm@11.9.0",
   "workspaces": [
     "apps/*",
-    "packages/*"
+    "packages/*",
+    "tools/*"
   ],
   "scripts": {
     "dev": "turbo dev",
@@ -14,7 +15,13 @@
     "db:up": "docker compose up -d --wait",
     "db:down": "docker compose down",
     "db:generate": "turbo db:generate",
-    "db:status": "npm run db:status -w @sc/db"
+    "db:status": "npm run db:status -w @sc/db",
+    "smoke": "npm run smoke -w @sc/smoke --",
+    "models:list": "npm run models -w @sc/smoke",
+    "db:migrate": "npm run db:migrate -w @sc/db --",
+    "db:seed": "npm run db:seed -w @sc/db",
+    "db:verify": "npm run db:verify -w @sc/db",
+    "db:studio": "npm run db:studio -w @sc/db"
   },
   "devDependencies": {
     "@types/node": "^20",

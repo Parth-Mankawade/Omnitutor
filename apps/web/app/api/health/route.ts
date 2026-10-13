@@ -1,4 +1,5 @@
-import { connection } from "next/server";
+import { connection, type NextRequest } from "next/server";
+import { checkModels } from "@sc/core";
 import { prisma } from "@sc/db";
 
 const REQUIRED_ENV = [
@@ -10,7 +11,7 @@ const REQUIRED_ENV = [
   "REFUSAL_TAU",
 ] as const;
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   await connection(); // always run at request time
 
   let db: { ok: boolean; latencyMs?: number; error?: string };
@@ -27,5 +28,12 @@ export async function GET() {
   // Report presence only, never values.
   const env = Object.fromEntries(REQUIRED_ENV.map((k) => [k, Boolean(process.env[k])]));
 
-  return Response.json({ ok: db.ok, db, env }, { status: db.ok ? 200 : 503 });
+  // Opt-in (?gemini=1): model metadata lookups only — no generation, no tokens.
+  if (request.nextUrl.searchParams.get("gemini") !== "1") {
+    return Response.json({ ok: db.ok, db, env }, { status: db.ok ? 200 : 503 });
+  }
+  const gemini = await checkModels().catch((e: unknown) => ({ error: e instanceof Error ? e.message : String(e) }));
+  const geminiOk = !("error" in gemini) && Object.values(gemini).every((m) => m.ok);
+  const ok = db.ok && geminiOk;
+  return Response.json({ ok, db, env, gemini }, { status: ok ? 200 : 503 });
 }

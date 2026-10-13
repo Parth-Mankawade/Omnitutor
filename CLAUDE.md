@@ -35,7 +35,8 @@ Model IDs come from env (`LLM_MODEL_FAST`, `LLM_MODEL_STRONG`, `EMBED_MODEL`) �
 - `tools/` (smoke, eval, sim): added in their modules. `docs/`: ARCHITECTURE.md, PROGRESS.md (update PROGRESS after every module).
 - One `.env` at the repo root. Gemini key var is `APP_GEMINI_API_KEY`, passed explicitly to the SDK; never use a machine-wide `GEMINI_API_KEY`.
 - Postgres: docker-compose, host port 5434, user/pass/db `study`.
-- Windows: `npm run db:generate` fails with EPERM while the dev server runs (DLL lock). Stop dev first.
+- Windows: `npm install` / `npm run db:generate` fail with EPERM while the dev server runs (DLL lock). Stop dev first.
+- `@sc/core`, `@sc/schemas`, `@sc/smoke` are ESM (`"type": "module"`); `@sc/db` is CJS.
 - Next 16 has breaking changes. Read `node_modules/next/dist/docs/` before using unfamiliar APIs. Cache Components is on: dynamic route handlers call `await connection()`.
 
 ## Architecture v2
@@ -51,6 +52,7 @@ No worker: `POST /api/sources` saves file, sets `Source.status=PROCESSING`, star
 - Build step `POST /api/build`: one LLM call → 5–8 topics with descriptions + prerequisite links; chunks tagged to nearest topic by embedding.
 
 ### Prisma models
+Source of truth: `packages/db/prisma/schema.prisma` (has additions beyond this list, each needed by a later module; see docs/ARCHITECTURE.md §5).
 Course, Source(type PDF|PPTX|VIDEO, path, status, error), Chunk(kind TEXT|FIGURE|SLIDE|TRANSCRIPT, content, page?, slide?, tStart?, tEnd?, embedding Float[], topicId?), Topic(name, description, prereqIds String[]), Question(topicId, type MCQ|SHORT|NUMERIC, difficulty 1-3, stem, options Json, answer Json, distractorMisconceptions Json, sourceChunkIds String[], verified, stemHash), Learner, Mastery(learnerId, topicId, p, n; unique), MasteryEvent(topicId, before, after, source QUIZ|CHAT), Assessment(kind DIAGNOSTIC|QUIZ|MOCK, scopeTopicIds, report Json), Attempt(questionId, response, correct, feedback Json, misconception?), ChatMessage(role, content, citations Json, coverage).
 
 ### Tutor (`POST /api/chat`)
@@ -89,5 +91,7 @@ OS CPU scheduling: 1 NPTEL/OCW lecture (15–20 min), 1 textbook chapter (20–3
 ## Status
 - [ ] Confirm deadline on Devpost
 - [x] Module 0: skeleton (Turborepo, Postgres, Prisma, /api/health) — see docs/PROGRESS.md
-- [ ] Module 1: Gemini smoke test (single-page PDF, Files API video upload, one PPTX slide batch, embeddings) — next step, needs model IDs
+- [x] Module 1: Gemini wrapper (`packages/core/src/llm.ts`) + `npm run smoke` — 4/4 pass, video check needs a sample mp4
+- [x] Module 2: Prisma schema (11 tables) + migration `init` + seed + `npm run db:verify` 12/12
+- [ ] Module 3: `@sc/schemas` shared Zod contract — next
 - [ ] Everything else
