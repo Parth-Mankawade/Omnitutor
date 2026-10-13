@@ -1,6 +1,6 @@
 # Ingestion Specification
 
-Updated: **2026-10-14** after Module 4. **Upload, validation, storage and file serving are implemented and tested. Parsing, chunking, embedding and indexing (Modules 5–8) are not.** Labels:
+Updated: **2026-10-14** after Module 5. **Upload, validation, storage, file serving (Module 4) and PDF ingestion (Module 5) are implemented and tested, PDF ingestion on your real Stage-1 PDF.** PPTX/video ingestion (Modules 6–7) and retrieval (Module 8) are not. Labels:
 
 - **VERIFIED:** implemented and exercised by unit or e2e tests (or a recorded smoke run).
 - **DEFINED:** present in the Prisma schema, Zod contract or config, but not exercised by any pipeline.
@@ -57,45 +57,57 @@ Content-Length: 187654321
 flowchart LR
   UI[UI /sources] -->|raw bytes ?filename=| UP["POST /api/sources (VERIFIED)"]
   UP -->|stream + cap + content check| FS[(data/uploads/&lt;uuid&gt;.&lt;ext&gt;)]
-  UP -->|insert Source PENDING| DB[(Postgres)]
-  UP -.->|start, not awaited| ING["ingest(source) (PLANNED, packages/core/src/ingest)"]
-  ING --> PDF[PDF: pdf-lib split → 1 Gemini call/page, concurrency 4]
-  ING --> PPTX[PPTX: JSZip → slides in order → Gemini batches of 5]
-  ING --> VID[VIDEO: Gemini Files API upload → ACTIVE → 1 call → segments]
-  PDF & PPTX & VID --> CH[Chunks + locators]
-  CH --> EMB["embed() 768-dim (VERIFIED fn)"]
-  EMB --> DB
-  ING -->|progressDone/Total, status, error| DB
+  UP -->|insert Source PENDING · no Gemini| DB[(Postgres)]
+  UI -->|Process button| IN["POST /api/sources/[id]/ingest (VERIFIED, PDF)"]
+  IN -->|status PROCESSING · job via after()| ING["runIngestion (packages/core/src/ingest)"]
+  ING --> PDF["PDF: split → 1 Gemini call/page (VERIFIED)"]
+  ING -.-> PPTX[PPTX: Module 6]
+  ING -.-> VID[VIDEO: Module 7]
+  PDF --> LIM["limiter: RPM/TPM/RPD + cache (VERIFIED)"] --> GEM[Gemini]
+  PDF --> CH[Chunks: one page locator each]
+  CH --> EMB["embed() 768-dim, cached per text (VERIFIED)"]
+  EMB -->|atomic replace + READY| DB
+  ING -->|progressDone/Total, FAILED + error| DB
   UI -->|poll every 2 s| LIST["GET /api/sources (VERIFIED)"] --> DB
   UI -->|citations| FILES["GET /api/files/[id] + Range (VERIFIED)"] --> FS
-  BUILD["POST /api/build (PLANNED)"] -->|topics + prereqs, tag chunks| DB
+  BOOT["instrumentation.ts (VERIFIED)"] -->|stale PROCESSING → FAILED| DB
+  BUILD["POST /api/build (Module 9)"] -->|topics + prereqs, tag chunks| DB
 ```
 
-Steps (ARCHITECTURE §6.1, PLANNED):
-1. **(VERIFIED, Module 4)** Save the original; create `Source { status: PENDING, pageCount | durationSec }`. **(PLANNED, Module 5)** Start ingestion: `status: PROCESSING`, `progressTotal` = pages / ⌈slides/5⌉ / 1.
-2. Run the type-specific extraction (§4), producing chunks with exactly one locator each.
-3. Embed every chunk (`embed(texts, "RETRIEVAL_DOCUMENT")`), then insert the `Chunk` rows.
-4. Set `status = READY`. On any error, set `status = FAILED` and `error = <message>`.
-5. Later, `POST /api/build` creates topics and sets `Chunk.topicId`.
+Steps (all VERIFIED for PDF):
+1. Upload saves the original and creates `Source { status: PENDING, pageCount | durationSec }`. **No Gemini call.**
+2. `POST /api/sources/[id]/ingest` sets `status: PROCESSING, progressTotal: pageCount` and starts the job (Next `after()` keeps it alive after the response).
+3. The job extracts each page (§4.1), turns blocks into chunks with exactly one locator, and embeds every chunk (`RETRIEVAL_DOCUMENT`).
+4. On success, one transaction: delete the source's old chunks, insert the new ones, set `READY`. On any failure: `FAILED` with a readable `error` ("Page 4: …", "Daily generate budget reached …"), no chunks written.
+5. Later, `POST /api/build` creates topics and sets `Chunk.topicId` (Module 9).
 
-**Re-ingestion (PLANNED):** delete the source's chunks (cascade) and recreate them.
+**Re-ingestion (VERIFIED):** call ingest again; chunks are replaced (no duplicates). Unchanged pages and texts come from the cache at zero cost.
 
-**Startup recovery: UNRESOLVED.** A server restart during ingestion leaves `PROCESSING` rows that nothing will finish, because there is no worker (by design). Proposal: on boot, mark stale `PROCESSING` rows as `FAILED` with `error: "interrupted"`.
+**Startup recovery (VERIFIED):** `apps/web/instrumentation.ts` marks `PROCESSING` rows with no progress for 2 min as `FAILED` ("interrupted … run ingest again; finished pages are cached").
+
+**Quota guard (VERIFIED):** every Gemini call goes through `limiter.ts`:
+- **Per-minute windows:** RPM and TPM.
+- **Concurrency.**
+- **Daily budget:** a ledger in `data/cache/usage.json`, Pacific day.
+
+Embedding requests count once per text. Defaults: Flash Lite 12 RPM / 200K TPM / 450 per day; embeddings 80 / 24K / 900. The limits verified in AI Studio are 15 / 250K / 500 and 100 / 30K / 1K. Today's usage is shown in `GET /api/health` → `usage`.
 
 ---
 
 ## 4. Per-type processing
 
-### 4.1 PDF (PLANNED, Module 5)
+### 4.1 PDF (VERIFIED, Module 5; real data)
 
 | Step | Detail | Evidence |
 |---|---|---|
-| Split | `pdf-lib` copies each page into a 1-page PDF | `pdf-lib@1.17.1` installed in `@sc/core`; no code |
-| Extract | One `generateJson` call per page on `LLM_MODEL_FAST` with an inline `application/pdf` part. Output `{ blocks: [{ kind: "text" \| "figure" \| "table", content }], conceptLabels: string[] }` | **VERIFIED on a synthetic 1-page PDF** (Module 1 smoke `pdf`: 3 blocks, the figure described with P1/24 values, 578 in / 318 out tokens, 9.2 s) |
-| Chunk | text/table blocks → `Chunk(kind=TEXT)`; **each figure → its own `Chunk(kind=FIGURE)`** with the description as `content` and the caption as `title` | PLANNED |
-| Locator | `page` = 1-based page index in the file | DEFINED (`Chunk.page`) |
-| Concurrency | 4 pages at a time | PLANNED. **No limiter exists in `llm.ts`** |
-| Progress | `progressTotal` = page count, `progressDone` += 1 per page | DEFINED (schema comment) |
+| Split | `pdf-lib` copies each page into a 1-page PDF (`splitPdf`) | unit test |
+| Extract | One `generateJson` call per page on `LLM_MODEL_FAST`: inline `application/pdf` + prompt `PDF_PAGE_PROMPT` (version `pdf-page-v1`). Output `{ blocks: [{ kind: text \| figure \| table, title, content }], conceptLabels }`. Cached by file SHA-256 + page + prompt version + model + schema | **real:** 9 pages → 9 requests, 8,091 input tokens (≈900/page), 12 s |
+| Chunk | Consecutive text/table blocks are grouped (≤ 1,200 chars) into `TEXT`; **each figure becomes its own `FIGURE` chunk** (caption = `title`); empty blocks dropped; footers/boilerplate skipped by the prompt | **real:** 14 chunks, 5 figures (pages 3 ×2, 4, 5, 9) |
+| Image-only pages | Slides embedded as pictures are transcribed (text) and described (figures) | **real:** pages 4 and 9 extracted fully (facts 5/5, 7/7) |
+| Locator | `page` = 1-based page index in the file | **real:** all 14 chunks page-only, 1–9 |
+| Concurrency | 4 pages in flight; the limiter paces requests | real run within limits |
+| Progress | `progressTotal` = pages; `progressDone` +1 per page | real: 0 → 3 → 6 → 8 → 9 |
+| Quality | Ground truth `tools/e2e/stage1/expectations.json` (47 facts) | **47/47 (100%)**. Manual review: faithful. Minor: histogram start value imprecise (p3), nested bullets flattened (p4), title-only chunk (p5) |
 
 ### 4.2 PPTX (PLANNED, Module 6)
 
@@ -113,13 +125,13 @@ Steps (ARCHITECTURE §6.1, PLANNED):
 
 | Step | Detail | Evidence |
 |---|---|---|
-| Upload | `uploadFile(path, "video/mp4")` → Gemini Files API, polled every 2 s until `ACTIVE` (5-min timeout) | Function exists in `packages/core/src/llm.ts`. **Never executed** (smoke `video` skipped: no sample mp4) |
+| Upload | `uploadFile(path, "video/mp4")` → Gemini Files API, polled every 2 s until `ACTIVE` (5-min timeout) | **VERIFIED** (smoke on the 45 s sample: upload + ACTIVE 7.6 s) |
 | Remote handle | `Source.geminiFileName`, `geminiFileUri`, `geminiFileExpiresAt` (remote copies expire after 48 h; the original stays in `data/uploads`) | DEFINED (schema) |
-| "Transcription" | **No dedicated ASR.** One multimodal `generateJson` call on `LLM_MODEL_STRONG` (currently `gemini-3.1-flash-lite`) returns `segments: [{ tStart, tEnd, transcript, onScreen, conceptLabels }]` | PLANNED. **Unverified** whether this model returns accurate timestamps for a 15–20 min lecture |
+| "Transcription" | **No dedicated ASR.** One multimodal `generateJson` call on `LLM_MODEL_STRONG` (currently `gemini-3.1-flash-lite`) returns `segments: [{ tStart, tEnd, transcript, onScreen, conceptLabels }]` | Smoke: works, but only **2 segments for 45 s** (coarse). Module 7's prompt must request finer segments; timestamp accuracy to be checked against the known segment map (data/demo/README.md) |
 | Chunk | One `Chunk(kind=TRANSCRIPT)` per segment; `content = "<transcript>\n[On screen] <onScreen>"` (Q11, adopted) | PLANNED |
 | Locator | `tStart`, `tEnd` in seconds (float). Clamp to `[0, durationSec]`, but **`durationSec` is never measured** | DEFINED / UNRESOLVED |
 | Progress | `progressTotal = 1` | DEFINED (schema comment) |
-| Cost risk | A 20-min video is roughly 300k+ input tokens at default media resolution (estimate from Gemini's documented per-second video token rate; **not measured**). It may exceed free-tier tokens-per-minute limits, which are also unverified (AI Studio → Rate limits) | UNVERIFIED |
+| Cost | **Measured: ≈91 input tokens per second of video** (45.1 s → 4,129 tokens). So the 2:34 clip ≈ 14K tokens, and a 20-min lecture ≈ 110K tokens, under the verified 250K/min limit in one call | **VERIFIED** (one smoke run) |
 
 ---
 
@@ -129,8 +141,9 @@ Steps (ARCHITECTURE §6.1, PLANNED):
 |---|---|---|
 | Model | `EMBED_MODEL = gemini-embedding-001`, `outputDimensionality: 768` (`EMBED_DIM`) | **VERIFIED** (smoke `embed`: dim 768; the RR query ranked the RR doc first, 0.806 vs 0.483) |
 | Task types | documents `RETRIEVAL_DOCUMENT`, queries `RETRIEVAL_QUERY` | VERIFIED (`embed()` in `llm.ts`) |
-| Batching | 100 texts per request | implemented in `embed()`, only exercised with 3 texts |
-| Embedded text | `title ? title + "\n" + content : content` (Q16, adopted) | PLANNED |
+| Batching | ≤ min(100, RPM) texts and ≤ TPM tokens per request; **each text counts as one request** (verified on the dashboard) | **VERIFIED** (real: 14 texts → 14 requests) |
+| Cache | Per text, keyed by model + dimension + task type + text (`data/cache/embed/`) | **VERIFIED** (real re-run: 0 requests) |
+| Embedded text | `title ? title + "\n" + content : content` (Q16) | **VERIFIED** (`embedText`) |
 | Storage | `Chunk.embedding Float[]` → Postgres `DOUBLE PRECISION[]`; empty array until embedded | **VERIFIED** (`db:verify`: 768 values round-trip, max error 5.6e-17) |
 | Index | **No vector index** (pgvector is cut). Cosine is computed in JS over all chunks of the course | PLANNED (`retrieve.ts` doesn't exist) |
 | Query | Top 6 by cosine. `topScore` = best cosine. Refuse if `topScore < REFUSAL_TAU` (env, **placeholder 0.55, uncalibrated**) | PLANNED |
@@ -214,4 +227,4 @@ The URL is built client-side with `citationHref()`: `/api/files/{sourceId}#page=
 | Q16 | Embedded text | Adopted: `title + "\n" + content` (Module 8) |
 | Q17 | Restart recovery for `PROCESSING` sources | Adopted: mark stale PROCESSING as FAILED ("interrupted") on boot (Module 5) |
 | Q18 | Unsupported PPTX media (`.emf`/`.wmf`/`.svg`) | Adopted: skip and note `[figure omitted: unsupported format]` (Module 6) |
-| Q19 | Gemini rate limiting | Open: read RPM/TPM in AI Studio → Rate limits; add a limiter to `llm.ts` before Module 5 |
+| Q19 | Gemini rate limiting | **Resolved (Module 4.5):** limiter with verified limits, daily ledger, cache |

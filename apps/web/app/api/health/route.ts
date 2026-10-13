@@ -1,4 +1,4 @@
-import { checkModels } from "@sc/core";
+import { checkModels, todayUsage } from "@sc/core";
 import { prisma } from "@sc/db";
 import { HealthQuery, HealthResponse } from "@sc/schemas";
 import { handle, json, readQuery } from "../_lib/http";
@@ -32,5 +32,15 @@ export const GET = handle(async (req) => {
   // Opt-in (?gemini=1): model metadata lookups only, no generation and no tokens.
   const gemini = query.gemini ? await checkModels() : undefined;
   const ok = db.ok && (!gemini || Object.values(gemini).every((m) => m.ok));
-  return json(HealthResponse, { ok, db, env, ...(gemini && { gemini }) }, ok ? 200 : 503);
+
+  // Today's Gemini usage as counted by the limiter (local file; no API call).
+  let usage: HealthResponse["usage"];
+  try {
+    const u = todayUsage();
+    const kind = (k: "generate" | "embed") => ({ ...u[k], requestsPerDay: u.limits[k].rpd, requestsPerMinute: u.limits[k].rpm });
+    usage = { day: u.day, generate: kind("generate"), embed: kind("embed") };
+  } catch {
+    usage = undefined; // ledger unreadable: health still answers
+  }
+  return json(HealthResponse, { ok, db, env, ...(gemini && { gemini }), ...(usage && { usage }) }, ok ? 200 : 503);
 });

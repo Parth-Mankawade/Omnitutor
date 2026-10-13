@@ -33,3 +33,6 @@ coverage/
 # demo dataset (lecture video, textbook PDF, slide deck); too large for git
 /data/demo/*
 !/data/demo/README.md
+
+# Gemini response cache + usage ledger (local only)
+/data/cache/

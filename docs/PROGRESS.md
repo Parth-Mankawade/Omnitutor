@@ -7,25 +7,29 @@ Legend: ✅ done & verified · 🟡 in progress / awaiting review · ⬜ not sta
 
 ---
 
-## 0. Summary (2026-10-14, after Module 4)
+## 0. Summary (2026-10-14, after Module 5)
 
 - **Done:**
-  - Backend Modules 0–2.
-  - **Contract v1.1** (typed client `@sc/client`, path builders, registry status enforced by tests, audit fixes).
-  - **Module 4:** learners, streamed uploads with content validation, source list/delete, file serving with Range.
-- **Tests:** 162 unit/contract tests; 37 e2e tests passing against **both** the dev and production servers; production build with 0 warnings.
-- **Next:** a Gemini rate limiter in `llm.ts` (I-12), then Module 5: PDF ingestion (+ retry endpoint, restart recovery).
-- **Blocked / at risk:**
-  - **Demo dataset** (teammate Task 1) is needed for real tests of Modules 5–7.
-  - The video path is unverified against Gemini (no real mp4 yet).
-  - Gemini free-tier limits unknown.
+  - Modules 0–4 + contract v1.1.
+  - **Stage-1 dataset** in `data/demo/` (validated; PDF extended to 9 pages with a Round Robin slide).
+  - **Module 4.5:** Gemini rate limiter + result cache + usage ledger.
+  - **Module 5:** PDF ingestion via the explicit `POST /api/sources/[id]/ingest`.
+- **Real-data result:** your 9-page PDF was ingested in **12 s** for **9 Gemini requests + 14 embedding requests**:
+  - **47/47 ground-truth facts** found, including both image-only pages.
+  - The re-run cost **0 requests** (cache).
+- **Measured:** video ≈ **91 input tokens/s** (45 s smoke clip: 4,129 tokens), so a 20-min lecture ≈ 110K tokens fits the 250K/min limit.
+- **Gemini used today (app ledger):** generate 10/450, embed 14/900.
+- **Tests:** 194 unit/contract · 39 e2e · production build 0 warnings.
+- **Next:** Module 8 (retrieval) on the real chunks; Modules 6/7 (PPTX/video) need a real deck with pictures and a go-ahead for video ingestion.
+- **At risk:**
+  - Slide deck has no pictures (generated).
+  - PDF lacks FCFS/SJF/priority numericals for later quiz work.
   - Deadline not confirmed.
 - **Waiting on you:**
-  - Review Module 4 (Postman collection in `docs/postman/`).
+  - Review Modules 4.5 + 5.
   - Push.
-  - Send `docs/TEAMMATE_BRIEF.md` (v1.1, recreated; it was missing from disk).
   - Confirm the Devpost deadline.
-  - Check AI Studio → Rate limits for `gemini-3.1-flash-lite` and `gemini-embedding-001`.
+  - Provide a real .pptx with pictures (Stage 2).
 
 ## 1. Backend modules (Parth): cross-referenced with ARCHITECTURE.md §10
 
@@ -37,7 +41,8 @@ Legend: ✅ done & verified · 🟡 in progress / awaiting review · ⬜ not sta
 | 3 | `@sc/schemas` contract + mocks | both teammates sign off | 🟡 | Built + tested. **Needs teammate sign-off** (v1.1 brief) |
 | 3.1 | Contract v1.1 + `@sc/client` (audit fixes I-01…I-07) | integration issues resolved, tested | ✅ | 103 schema tests + 16 client tests; INTEGRATION_AUDIT §11 |
 | 4 | Learners API, upload (streamed, validated), sources list/delete, `/api/files/[id]` (Range) | file uploads; video seeks in browser | 🟡 awaiting review | 43 core + 37 e2e (dev **and** prod). **Browser seek not yet tried with a real mp4** (server Range verified) |
-| 5 | PDF ingestion | chunks with page + figure chunks | ⬜ | needs dataset PDF (synthetic PDF works for dev) |
+| 4.5 | Gemini rate limiter + result cache + usage ledger (`limiter.ts`, `cache.ts`) | stay under free-tier limits; re-runs free | ✅ | 17 unit tests (fake clock); real: smoke + Stage-1 runs paced, re-run 0 requests |
+| 5 | PDF ingestion (`POST /api/sources/[id]/ingest`) | chunks with page + figure chunks | 🟡 awaiting review | **Real PDF: 14 chunks (5 figures), 47/47 facts, page locators exact, re-run free**; 12 unit tests (fake Gemini) + 2 e2e |
 | 6 | PPTX ingestion | one chunk per slide, in order | ⬜ | needs a .pptx |
 | 7 | Video ingestion | timestamped segments | ⬜ | needs an mp4 (≤ 20 min) |
 | 8 | Embeddings + retrieval | top-6 includes the right chunk | ⬜ | |
@@ -86,14 +91,16 @@ Legend: ✅ done & verified · 🟡 in progress / awaiting review · ⬜ not sta
 | Env: APP_GEMINI_API_KEY (from `.env` only) | ✅ present | 2026-10-14 |
 | Env: LLM_MODEL_FAST / LLM_MODEL_STRONG = `gemini-3.1-flash-lite`, EMBED_MODEL = `gemini-embedding-001` | ✅ present | 2026-10-14 |
 | Gemini API reachable (`/api/health?gemini=1`, metadata only, 0 tokens) | ✅ all 3 models ok | 2026-10-14 |
-| Gemini smoke (`npm run smoke`) | ✅ 4/5 (video skipped, never run) | 2026-10-14 (not re-run: costs tokens) |
+| Gemini smoke (`npm run smoke`) | ✅ 5/5 (video run 2026-10-14 on the 45 s sample: 4,129 tokens ≈ 91 tokens/s) | 2026-10-14 |
+| Gemini usage today (`/api/health` → `usage`) | generate 10/450 · embed 14/900 (app ledger; AI Studio is authoritative) | 2026-10-14 |
 | Typecheck (7 workspaces) / lint | ✅ clean | 2026-10-14 |
-| Production build (`npm run build`) | ✅ 0 warnings; 5 dynamic API routes | 2026-10-14 |
+| Production build (`npm run build`) | ✅ 0 warnings; 6 dynamic API routes | 2026-10-14 |
 | Prisma CLI → DB (reads root `.env`) | ✅ connects to localhost:5434 | 2026-10-14 |
 | Migrations (`npm run db:status`) | ✅ `init` applied, schema up to date | 2026-10-14 |
 | Schema checks (`npm run db:verify`) | ✅ 12/12 | 2026-10-14 |
-| Unit + contract tests (`npm run test`) | ✅ 162/162 (schemas 103 · client 16 · core 43) | 2026-10-14 |
-| End-to-end (`npm run test:e2e`) | ✅ 37/37 on dev server · 37/37 on production server | 2026-10-14 |
+| Unit + contract tests (`npm run test`) | ✅ 194/194 (schemas 106 · client 16 · core 72) | 2026-10-14 |
+| End-to-end (`npm run test:e2e`) | ✅ 39/39 on dev server (no Gemini usage) | 2026-10-14 |
+| Stage-1 real-data PDF check (`npm run stage1:pdf`) | ✅ 7/7 checks · 47/47 facts | 2026-10-14 |
 
 Live check: `GET http://localhost:3000/api/health` (Postman or curl). Add `?gemini=1` to also check the key and models (no tokens used).
 DB GUI: PostgreSQL · `localhost:5434` · user `study` · password `study` · db `study`
@@ -224,6 +231,60 @@ Not verified yet:
 - The PDF iframe `#page=N` in a browser (needs the UI).
 - A real lecture file through the MP4 parser.
 
+### Stage-1 dataset preparation — 2026-10-14 (inputs: YOUR real files, read-only checks)
+| Check | Result |
+|---|---|
+| Copied package → `data/demo/` | ✅ 10 files, byte-identical (`cmp`), all gitignored |
+| PDF content (viewed every page) | 8 pages of "CS C372" lecture slides; pages 4, 9 image-only; no Gantt chart / numerical in the original |
+| Round Robin slide (your screenshot) | Headline numbers **verified by independent simulation** (schedule, 7.75, 3, 7 switches); **one slide error** found (FIFO at t=8 shows P3 after it finished) |
+| `process-scheduling-9pages.pdf` | ✅ original 8 pages + RR slide; deterministic rebuild; upload validator accepts (9 pages) |
+| Video (ffprobe + scene detection + frames) | ✅ 154.16 s H.264+AAC, narration throughout; 12-segment map with exact times (data/demo/README.md) |
+| `tools/smoke/fixtures/sample.mp4` | ✅ 45 s lossless cut (25.8–70.8 s), accepted by validator, gitignored |
+| Test set `data/demo/testset.stage1.json` | ✅ 15 items (6 PDF, 4 video, 5 off-material; 4 need a figure), `TestSet` schema valid |
+| Ground truth `tools/e2e/stage1/expectations.json` | ✅ 9 pages, 47 regex facts (written by reading each page) |
+
+### Module 4.5 — Gemini rate limiter, cache, usage ledger — 2026-10-14
+Verified free-tier limits (your AI Studio screenshot): Flash Lite 15 RPM / 250K TPM / 500 RPD; Embedding 100 RPM / 30K TPM / 1K RPD. **Embedding requests count per text** (dashboard showed 4 for 4 texts in 2 calls). The limiter enforces defaults below these (12 / 200K / 450 and 80 / 24K / 900), configurable via env.
+
+| Test (no Gemini; fake clock / temp files) | Result |
+|---|---|
+| RPM sliding window; TPM window; settle() with real tokens frees room; oversize call fails fast | ✅ 3 |
+| Concurrency cap | ✅ 1 |
+| Daily budget: stops at RPD, persists across restart, resets next Pacific day; embeds count per text | ✅ 2 |
+| Pacific-day boundary (PDT/PST), env overrides | ✅ 2 |
+| Disk cache round-trip / miss / `LLM_CACHE=off` | ✅ 1 |
+| `generateJson` cache: miss tries Gemini; **hit works with no API key**; stale entries ignored; key varies by model/schema/key | ✅ 4 |
+| `embed` cache: cached texts need no network; task type is part of the key | ✅ 2 |
+| `retryDelayMs` (RetryInfo parsing), token estimates | ✅ 2 |
+| **Real:** video smoke via limiter (1 request) | ✅ 45.1 s → 4,129 input tokens (≈91 tokens/s), 2 segments (coarse: Module 7 prompt must ask for finer segments) |
+
+### Module 5 — PDF ingestion — 2026-10-14
+Design:
+- Upload is free and stays `PENDING`.
+- `POST /api/sources/[id]/ingest` → `PROCESSING` → `READY` / `FAILED`.
+- Job flow: split pages (pdf-lib) → 1 cached Gemini call per page (4 in flight, limiter-paced) → text/figure/table blocks → chunks with exactly one page locator → embeddings (cached per text) → atomic chunk replace.
+- Server start marks stale `PROCESSING` rows `FAILED` (`instrumentation.ts`).
+
+| Test | Inputs | Result |
+|---|---|---|
+| `pageChunks` grouping / figures / tables / empties / long text / labels; `embedText` | synthetic | ✅ 4 |
+| `splitPdf` | synthetic (`makePdf`) | ✅ 1 |
+| PENDING→PROCESSING→READY, page-cited chunks, embeddings, stats, progress | synthetic PDF + **fake Gemini** | ✅ |
+| Re-run replaces chunks; failing page → FAILED "Page 2: …", no chunks; empty → FAILED; 2nd request while running → 409; PPTX/unknown → 409/404 | synthetic + fake Gemini | ✅ 5 |
+| Stale-PROCESSING recovery (only stale rows) | DB | ✅ 1 |
+| e2e: upload never starts ingestion (usage unchanged); ingest PPTX → 409, unknown → 404 | synthetic, no Gemini | ✅ 2 |
+| **Real:** `npm run stage1:pdf` on `process-scheduling-9pages.pdf` | **your PDF, real Gemini** | ✅ run 1: 12 s, 9 requests (8,091 input tokens), 14 embeddings · run 2: 0 requests (cache) |
+| **Real:** fact recall vs ground truth | your PDF | ✅ **47/47 (100%)**; figures on pages 3 (×2), 4, 5, 9; locators page-only 1–9; 768-dim embeddings |
+
+Manual review of all 14 chunks:
+- **Faithful:** verbatim text on pages 1–2 and 6–8; footers dropped.
+- **Page 5:** all 6 state transitions correct.
+- **Page 9:** table, formulas and a Gantt timeline with correct times reconstructed from the image; the slide's FIFO error reproduced, not "fixed".
+- **Minor issues:**
+  - The page 3 histogram description says it starts at ~160 at 0 ms (it actually peaks at ~155 near 2 ms).
+  - Page 4's nested bullets were flattened onto one line.
+  - Page 5 has an extra title-only text chunk.
+
 ## 5. Accuracy / eval metrics (filled in Module 15)
 
 | Metric | Target | Current |
@@ -234,6 +295,9 @@ Not verified yet:
 | Citation accuracy (correct page/slide/timestamp) | ≥ 80% | — |
 | Refusal precision / recall (off-material) | ≥ 0.8 / ≥ 0.8 | — |
 | Quiz verify pass rate | report | — |
+| PDF ingestion fact recall (Stage-1 ground truth) | ≥ 90% | **100% (47/47)** |
+| Gemini cost: PDF ingestion (9 pages) | ~1 request/page | **9 requests, 8,091 input tokens; re-run 0** |
+| Gemini cost: video | — | **≈91 input tokens per second of video** |
 | Sim: mastery gain, adaptive vs random | adaptive > random | — |
 | Sim: repetition rate | 0% | — |
 
@@ -253,6 +317,11 @@ Not verified yet:
   2. Module 3 needs the teammate's sign-off.
   3. Modules 10 and 14 were split: the backend API is Parth's, and the citation panel and dashboard UI belong to the teammate. ARCHITECTURE §10 is updated to match.
   4. Module 4 now also covers the learners endpoints, and Module 9 covers `/api/topics`.
+- **Module 5 decisions:**
+  - **Ingestion is explicit** (`POST /api/sources/[id]/ingest`), not automatic on upload. This gives control over when Gemini quota is spent, and tests never trigger calls. The same call re-runs or retries, with finished pages from the cache.
+  - Ingestion currently supports **PDF only**; PPTX/VIDEO get a clear 409.
+  - A failed page fails the whole run (no partial chunks); retrying is cheap because finished pages are cached.
+  - Cache key = file SHA-256 + page + `PDF_PROMPT_VERSION` + model + schema. Bump `PDF_PROMPT_VERSION` after prompt changes.
 - **Module 4 decisions:**
   - Uploads are **raw bytes + `?filename=`** (not multipart) so they stream to disk.
   - The **extension decides the type** and the **content must match**; the browser MIME type is ignored.

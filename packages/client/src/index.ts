@@ -119,6 +119,8 @@ export function createApiClient(options: ApiClientOptions = {}) {
       });
     },
     deleteSource: (id: string) => send("deleteSource", paths.source(id), { method: "DELETE" }),
+    /** Starts ingestion (spends Gemini quota; cached pages are free). Poll listSources for progress. */
+    ingestSource: (id: string) => send("ingestSource", paths.ingestSource(id), { method: "POST" }),
 
     buildCourse: (body: BuildRequest = {}) => sendJson("buildCourse", paths.build(), body),
     listTopics: () => get("listTopics", paths.topics()),

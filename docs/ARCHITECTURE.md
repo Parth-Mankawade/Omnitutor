@@ -58,6 +58,8 @@ How it is judged: KB & Grounding 20 · Assessment 15 · Personalization 20 · UX
 | Registry status is enforced | A test fails unless every `live` endpoint is exported by its route file and no `planned` endpoint exists, so the frontend can trust `status`. |
 | Thin routes over `@sc/core` services | Routes parse input (`readBody` / `readQuery`), call core, and return `json(ResponseSchema, data)` (validated). One `handle()` wrapper maps errors to `ApiErrorBody`. |
 | Uploads are raw bytes, streamed to disk | No multipart buffering. A 500 MiB cap is enforced while streaming, and the content must match the extension (PDF / PPTX / MP4 checks, MP4 duration ≤ 20:00). |
+| **Ingestion is explicit** (`POST /api/sources/[id]/ingest`) | Uploading is free; only the ingest call spends Gemini quota. This gives the user control, and tests never trigger API calls. The same call re-runs or retries. |
+| **Quota guard + result cache in `@sc/core`** | `limiter.ts` enforces RPM/TPM/concurrency/daily budgets below the verified free tier (embeddings count per text). `cache.ts` stores deterministic results on disk, so re-ingesting an unchanged file costs 0 requests. |
 
 ---
 
@@ -91,6 +93,7 @@ multimodal/
 │     │  │  ├─ learners/route.ts          # ✅ list/create learners
 │     │  │  ├─ sources/route.ts           # ✅ GET list · POST raw-bytes upload (?filename=)
 │     │  │  ├─ sources/[id]/route.ts      # ✅ DELETE source (+ file)
+│     │  │  ├─ sources/[id]/ingest/route.ts  # ✅ POST: start/re-run ingestion (job continues via after())
 │     │  │  ├─ files/[id]/route.ts        # ✅ GET/HEAD originals with HTTP Range (video seek, PDF)
 │     │  │  ├─ build/route.ts             # topics + prerequisites + chunk tagging (Module 9)
 │     │  │  ├─ topics/route.ts            # (Module 9)
@@ -100,6 +103,7 @@ multimodal/
 │     │  │  └─ mastery/route.ts           # dashboard data (Module 14)
 │     │  └─ sources/ tutor/ quiz/ quiz/[id]/report/ dashboard/   # pages (teammate)
 │     ├─ scripts/next.mjs                 # launches Next with the root .env loaded
+│     ├─ instrumentation.ts               # at server start: interrupted ingestions → FAILED
 │     └─ next.config.ts
 ├─ packages/
 │  ├─ db/                          @sc/db — Prisma schema, migrations, client singleton
@@ -110,15 +114,17 @@ multimodal/
 │  │  └─ src/  common · paths · citation · course · tutor · quiz · mastery · eval · system · endpoints · mocks
 │  ├─ client/                      @sc/client — typed HTTP client on the contract (used by UI + tools)
 │  └─ core/                        @sc/core — all domain logic, no Next.js imports
-│     └─ src/  llm · errors · storage · media · course · learners · sources   (✅ Modules 1–4)
-│              ingest/ · embed · retrieve · tutor · quiz · bkt               (Modules 5–13)
+│     └─ src/  llm · limiter · cache · errors · storage · media · course · learners · sources   (✅ 1–4.5)
+│              ingest/{index,pdf}  (✅ Module 5: PDF) · retrieve · tutor · quiz · bkt   (Modules 6–13)
 │              testing.ts                  # fixtures for tests (@sc/core/testing)
 ├─ tools/
 │  ├─ smoke/                       @sc/smoke — Gemini smoke tests + list-models (Module 1)
 │  ├─ e2e/                         @sc/e2e — end-to-end tests against the running server (npm run test:e2e)
+│  │                                 + stage1-pdf.ts / stage1/expectations.json: real-data ingestion check (npm run stage1:pdf)
 │  ├─ eval/                        ragas.py, score.ts, testset.json (teammate, Module 15)
 │  └─ sim/                         simulated students (teammate, Module 15)
 ├─ data/uploads/                   uploaded originals (gitignored)
+├─ data/cache/                     Gemini result cache + usage.json ledger (gitignored)
 ├─ data/demo/                      demo dataset (gitignored, except README)
 ├─ docs/                           ARCHITECTURE · PROGRESS · API_SPEC · INGESTION_SPEC · INTEGRATION_AUDIT · TEAMMATE_BRIEF · postman/
 ├─ docker-compose.yml              Postgres only, host port 5434
@@ -173,9 +179,9 @@ Learner ─┬─< Mastery (topicId, p=0.3, n=0)                       @@unique(
 
 ## 6. Pipelines
 
-### 6.1 Ingestion (`POST /api/sources`)
-1. ✅ (Module 4) Stream the raw bytes to `data/uploads/<uuid>.<ext>` (500 MiB cap), check the content matches the extension, record `pageCount` / `durationSec`, and create a `Source` with status `PENDING`.
-2. (Module 5) Start `ingest(source)` **without awaiting it** (status `PROCESSING`), then return immediately. The UI polls `GET /api/sources`.
+### 6.1 Ingestion (`POST /api/sources`, then `POST /api/sources/[id]/ingest`)
+1. ✅ (Module 4) Upload: stream the raw bytes to `data/uploads/<uuid>.<ext>` (500 MiB cap), check the content matches the extension, record `pageCount` / `durationSec`, and create a `Source` with status `PENDING`. **No Gemini call.**
+2. ✅ (Module 5) Ingest on request: status `PROCESSING`, then return immediately while the job continues via `after()`. The UI polls `GET /api/sources`. A failing run → `FAILED` + `error`; re-running is cheap (cache). Server start marks interrupted runs `FAILED`.
 3. Per type:
    - **PDF:** `pdf-lib` splits the file into single-page PDFs. Each page gets one Gemini call (concurrency 4), which returns `{blocks:[{kind:text|figure|table, content}], conceptLabels}`. Text blocks become chunks. **Each figure becomes its own chunk** holding a description of the diagram (this is how "use info from figures" is met). Locator: `page`.
    - **PPTX:** JSZip reads slide order from `ppt/presentation.xml` plus its rels, text from `<a:t>` runs, and images through the slide rels into `ppt/media/*`. Slides go to Gemini in batches of 5 (text + images) and come back as one chunk per slide, with figure descriptions folded in. Locator: `slide`.
@@ -255,6 +261,7 @@ Each update writes `Mastery` and a `MasteryEvent(before, after, source)`, which 
 | `POST /api/sources?filename=` | raw file bytes → `UploadResponse` (`PENDING`) | 4 ✅ |
 | `GET /api/sources` | → `SourceView[]` | 4 ✅ |
 | `DELETE /api/sources/[id]` | → `DeleteSourceResponse` (409 while PROCESSING) | 4 ✅ |
+| `POST /api/sources/[id]/ingest` | → `UploadResponse` (`PROCESSING`); PDF only for now | 5 ✅ |
 | `GET`/`HEAD /api/files/[id]` | → original bytes; Range → 206 / 416 | 4 ✅ |
 | `POST /api/build` | `BuildRequest` → `BuildResponse` | 9 |
 | `GET /api/topics` | → `TopicView[]` | 9 |
@@ -294,7 +301,8 @@ Live status: [PROGRESS.md](PROGRESS.md). Teammate tasks run in parallel: [TEAMMA
 | 2 | Prisma schema (all models) + migration + seed learner | migrate succeeds, rows visible |
 | 3 | `@sc/schemas` contract + mocks | both teammates sign off |
 | 4 | Upload + `/api/files/[id]` with Range + learners API | file uploads; video seeks in the browser |
-| 5 | PDF ingestion | chunks with page + figure chunks in the DB |
+| 4.5 | Gemini rate limiter + result cache + usage ledger | under free-tier limits; re-runs free |
+| 5 | PDF ingestion (explicit ingest endpoint) | chunks with page + figure chunks in the DB |
 | 6 | PPTX ingestion | one chunk per slide, in the correct order |
 | 7 | Video ingestion | timestamped segments |
 | 8 | Embeddings + retrieval | top-6 for a known question includes the right chunk |
@@ -350,7 +358,8 @@ curl localhost:3000/api/health
 | `npm run test:e2e` | End-to-end tests against the running app (`npm run dev` first; `E2E_SKIP_HEAVY=1` skips the 2 GiB streaming test) |
 | `npm run build` / `npm run start -w @sc/web` | Production build / server (stop dev first on Windows) |
 | `npm run db:deploy` | Apply existing migrations without creating new ones (teammate setup) |
-| `npm run smoke [-- json pdf slides video embed]` | Gemini smoke test (all checks, or the named ones) |
+| `npm run smoke [-- json pdf slides video embed]` | Gemini smoke test (all checks, or the named ones); prints today's usage |
+| `npm run stage1:pdf` | **Spends quota on first run:** ingest the real Stage-1 PDF and score it against the 47-fact ground truth; second run must cost 0 |
 | `npm run models:list` | List models available to `APP_GEMINI_API_KEY` |
 
 **Windows:** stop the dev server before `npm install` or `db:generate` (Prisma's engine DLL is locked while it runs).

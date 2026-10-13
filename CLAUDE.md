@@ -40,6 +40,11 @@ Model IDs come from env (`LLM_MODEL_FAST`, `LLM_MODEL_STRONG`, `EMBED_MODEL`) �
 - Windows: `npm install` / `npm run db:generate` fail with EPERM while the dev server runs (DLL lock). Stop dev first.
 - `@sc/core`, `@sc/schemas`, `@sc/client`, `@sc/smoke`, `@sc/e2e` are ESM (`"type": "module"`); `@sc/db` is CJS and re-exports `Prisma` explicitly plus `export type *` (a runtime `export *` from `@prisma/client` triggers a Turbopack warning on every request).
 
+## Rules for Gemini usage (quota is the user's top concern)
+- Every Gemini call goes through `packages/core/src/llm.ts` (`generateJson`, `embed`, `uploadFile`), never the SDK directly. These pass the limiter (`limiter.ts`) and record usage in `data/cache/usage.json`.
+- Deterministic calls (ingestion) pass a `cacheKey` built from the file hash, location and a prompt version. **Bump the prompt version constant (e.g. `PDF_PROMPT_VERSION`) whenever the prompt or schema changes.**
+- Uploads never call Gemini; only `POST /api/sources/[id]/ingest` does. Tests use injected fakes (`IngestDeps`); real-data runs are opt-in scripts (`npm run stage1:pdf`). Report Gemini requests/tokens spent after any real run.
+
 ## Rules for API routes (enforced by tests)
 - A route is thin: wrap it in `handle()`, parse with `readBody` / `readQuery` (from `apps/web/app/api/_lib/http.ts`), call an `@sc/core` service, and return `json(endpoints.<name>.response, data)`. Responses are validated; errors become `ApiErrorBody` with `API_ERROR_STATUS`. Every success is 200.
 - Core services throw `AppError(code, userMessage)` (`badRequest` / `notFound` / `notReady`) and return contract-shaped objects (dates as ISO strings).
@@ -107,5 +112,8 @@ OS CPU scheduling: 1 NPTEL/OCW lecture (15–20 min), 1 textbook chapter (20–3
 - [x] Module 3: `@sc/schemas` contract + mocks; teammate brief (needs teammate sign-off)
 - [x] Module 3.1: contract v1.1 + `@sc/client` (audit fixes; INTEGRATION_AUDIT §11)
 - [x] Module 4: learners, streamed + validated uploads (raw bytes `?filename=`), sources list/delete, `/api/files/[id]` with Range. 162 unit + 37 e2e (dev and prod), build clean
-- [ ] Next: Gemini rate limiter in `llm.ts` (I-12), then Module 5 PDF ingestion (+ retry endpoint, boot recovery of stale PROCESSING)
+- [x] Stage-1 dataset in `data/demo/` (validated; PDF = 8 lecture pages + Round Robin slide; ground truth `tools/e2e/stage1/expectations.json`; test set `data/demo/testset.stage1.json`)
+- [x] Module 4.5: Gemini limiter + cache + usage ledger (video measured ≈91 tokens/s)
+- [x] Module 5: PDF ingestion via `POST /api/sources/[id]/ingest`. Real PDF: 47/47 facts, 9 requests, re-run free
+- [ ] Next: Module 8 retrieval on the real chunks (Modules 6/7 need a real deck with pictures / approval for video ingestion)
 - [ ] Everything else

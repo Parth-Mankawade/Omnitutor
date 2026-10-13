@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "test:e2e": "tsx --test --test-concurrency=1 \"src/**/*.test.ts\"",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "stage1:pdf": "tsx src/stage1-pdf.ts"
   },
   "dependencies": {
     "@sc/client": "*",

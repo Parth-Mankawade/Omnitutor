@@ -9,6 +9,7 @@ export const paths = {
   sources: () => "/api/sources",
   uploadSource: (filename: string) => `/api/sources?${qs({ filename })}`,
   source: (id: string) => `/api/sources/${seg(id)}`,
+  ingestSource: (id: string) => `/api/sources/${seg(id)}/ingest`,
   file: (sourceId: string) => `/api/files/${seg(sourceId)}`,
   build: () => "/api/build",
   topics: () => "/api/topics",

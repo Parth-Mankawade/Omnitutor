@@ -35,6 +35,7 @@ export const endpoints = {
   listSources: { method: "GET", path: "/api/sources", query: null, request: null, response: z.array(SourceView), status: "live", module: 4 },
   uploadSource: { method: "POST", path: "/api/sources", query: UploadQuery, request: "binary", response: UploadResponse, status: "live", module: 4 },
   deleteSource: { method: "DELETE", path: "/api/sources/[id]", query: null, request: null, response: DeleteSourceResponse, status: "live", module: 4 },
+  ingestSource: { method: "POST", path: "/api/sources/[id]/ingest", query: null, request: null, response: UploadResponse, status: "live", module: 5 },
   buildCourse: { method: "POST", path: "/api/build", query: null, request: BuildRequest, response: BuildResponse, status: "planned", module: 9 },
   listTopics: { method: "GET", path: "/api/topics", query: null, request: null, response: z.array(TopicView), status: "planned", module: 9 },
   chat: { method: "POST", path: "/api/chat", query: null, request: ChatRequest, response: TutorAnswer, status: "planned", module: 10 },

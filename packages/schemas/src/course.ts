@@ -39,7 +39,10 @@ export const SourceView = z.object({
 });
 export type SourceView = z.infer<typeof SourceView>;
 
-/** POST /api/sources. status is PENDING (stored, waiting for ingestion) or PROCESSING once ingestion starts. */
+/**
+ * POST /api/sources → status PENDING (stored; no Gemini usage yet).
+ * POST /api/sources/[id]/ingest → status PROCESSING (ingestion started; poll GET /api/sources).
+ */
 export const UploadResponse = z.object({ id: Id, status: SourceStatus });
 export type UploadResponse = z.infer<typeof UploadResponse>;
 

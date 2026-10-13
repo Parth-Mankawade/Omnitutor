@@ -2,8 +2,11 @@
 // Filled module by module — see docs/ARCHITECTURE.md §10.
 export * from "./errors";
 export * from "./llm";
+export * from "./limiter";
+export * from "./cache";
 export * from "./storage";
 export * from "./media";
 export * from "./course";
 export * from "./learners";
 export * from "./sources";
+export * from "./ingest/index";

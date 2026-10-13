@@ -1,6 +1,6 @@
 # API Specification (contract v1.1)
 
-Updated: **2026-10-14** after contract v1.1 + Module 4 (first audit: same day, commit `2d5d93a`).
+Updated: **2026-10-14** after Module 5 (PDF ingestion). Contract v1.1 + `ingestSource` + health `usage` (first audit: same day, commit `2d5d93a`).
 Source of truth for shapes: **`packages/schemas/src/*.ts`** (Zod). Typed client: **`@sc/client`**. This document restates them. If the two ever disagree, the code wins and this doc is wrong.
 
 **Status legend**
@@ -19,9 +19,10 @@ Source of truth for shapes: **`packages/schemas/src/*.ts`** (Zod). Typed client:
 
 | Check | Result |
 |---|---|
-| Unit + contract tests (`npm run test`) | **162 pass** (schemas 103, client 16, core 43) |
-| End-to-end vs running dev server (`npm run test:e2e`) | **37 pass** |
-| End-to-end vs production server (`next build` + `next start`) | **37 pass**; build has 0 warnings |
+| Unit + contract tests (`npm run test`) | **194 pass** (schemas 106, client 16, core 72) |
+| End-to-end vs running dev server (`npm run test:e2e`) | **39 pass** (no Gemini usage) |
+| End-to-end vs production server (`next build` + `next start`) | 37 pass at Module 4; Module 5 build has 0 warnings |
+| Real-data ingestion (`npm run stage1:pdf`) | 9-page PDF → READY, 47/47 facts; re-run 0 Gemini requests |
 | Registry ↔ route files (test) | Every `live` endpoint is exported by its route file; no `planned` endpoint exists; no unregistered route |
 | Planned endpoints over HTTP | Return Next's **HTML 404**. `@sc/client` maps this to `ApiError("http_error", 404)`, and in `auto` mode never calls them |
 | Wrong method on a live route | **405**, empty body (e.g. `DELETE /api/learners`) |
@@ -135,10 +136,10 @@ Examples `[mock]` (`citations` in `mocks.ts`):
 | E14 | POST | `/api/quiz/[id]/submit` | `paths.submitQuiz(id)` | 📄 | 13 (+11) | `SubmitRequest` | `QuizReport` |
 | E15 | GET | `/api/quiz/[id]/report` | `paths.report(id)` | 📄 | 13 | — | `QuizReport` |
 | E16 | GET | `/api/mastery` | `paths.mastery(learnerId)` | 📄 | 14 (+11) | query `LearnerQuery` | `MasteryView` |
-| E18 | POST | `/api/sources/[id]/retry` | — | 🔶 | 5 | — | `UploadResponse` |
+| E18 | POST | `/api/sources/[id]/ingest` | `paths.ingestSource(id)` | ✅ | 5 | — | `UploadResponse` (`PROCESSING`) |
 | E19 | GET | `/api/assessments?learnerId=` (quiz history list) | — | 🔶 | — | — | — |
 
-Registry: `packages/schemas/src/endpoints.ts`, with 16 JSON endpoints (E1–E5, E7–E17) plus `NON_JSON_ROUTES.file` (E6).
+Registry: `packages/schemas/src/endpoints.ts`, with 17 JSON endpoints (E1–E5, E7–E18) plus `NON_JSON_ROUTES.file` (E6).
 
 ---
 
@@ -156,6 +157,9 @@ Registry: `packages/schemas/src/endpoints.ts`, with 16 JSON endpoints (E1–E5, 
 ```
 - DB down: `503 {"ok":false,"db":{"ok":false,"error":"Server has closed the connection."},"env":{…}}`.
 - `env` reports presence only, never values.
+- `usage` (always present): today's Gemini usage **as counted by this app's limiter** (Pacific day), e.g.
+  `"usage": { "day": "2026-10-13", "generate": { "requests": 10, "inputTokens": 12220, "requestsPerDay": 450, "requestsPerMinute": 12 }, "embed": { "requests": 14, "inputTokens": 0, "requestsPerDay": 900, "requestsPerMinute": 80 } }`.
+  AI Studio remains the source of truth (calls made outside this app aren't counted).
 
 ### E2. `GET /api/learners`: ✅ LIVE
 - **Code:** `apps/web/app/api/learners/route.ts` → `listLearners()` (`packages/core/src/learners.ts`).
@@ -185,7 +189,7 @@ Registry: `packages/schemas/src/endpoints.ts`, with 16 JSON endpoints (E1–E5, 
 | VIDEO | `ftyp` box; `moov/mvhd` duration readable (moov before or after mdat, v0/v1, 64-bit boxes); **≤ 20:00** | `durationSec` |
 
   7. Rename to the final path and insert the `Source` row (`status: PENDING`, canonical `mimeType`, `sizeBytes`). Any failure removes the file, and no row is created.
-- **Response:** `UploadResponse = { id, status }`. Currently always `"PENDING"`; becomes `"PROCESSING"` once Module 5 starts ingestion on upload.
+- **Response:** `UploadResponse = { id, status: "PENDING" }`. **Uploading never starts ingestion and never calls Gemini** (e2e tested). Start it with E18.
 - **Errors (all 400 `bad_request`, all e2e tested):**
 
 | Case | Example message |
@@ -211,6 +215,26 @@ Registry: `packages/schemas/src/endpoints.ts`, with 16 JSON endpoints (E1–E5, 
 - **Response:** `DeleteSourceResponse = { id }`.
 - **Errors:** 404 `not_found` (unknown or already deleted) · **409 `not_ready` while `PROCESSING`**.
 - ⚠ Deleting a source after the course is built leaves its topics in place, so rebuild (Module 9).
+
+### E18. `POST /api/sources/[id]/ingest`: ✅ LIVE (Module 5)
+- **Purpose:** start (or re-run) ingestion. **This is the only call that spends Gemini quota for a source.**
+- **Body:** none. **Response 200:** `UploadResponse` → `{ "id": "...", "status": "PROCESSING" }`. The job continues after the response (Next `after()`); poll `GET /api/sources` for `progressDone/progressTotal` and the final `READY` / `FAILED` (+ `error`).
+- **Cost:** about 1 Flash Lite request per PDF page, plus 1 embedding request per chunk. Re-runs of an unchanged file are **free** (results cached on disk by file hash + page + prompt version). Measured on the Stage-1 PDF: 9 pages → 9 + 14 requests, re-run 0.
+- **Errors:**
+
+| Status | Code | Case |
+|---|---|---|
+| 404 | `not_found` | unknown id |
+| 409 | `not_ready` | already processing |
+| 409 | `not_ready` | not a PDF (`PPTX ingestion isn't built yet …`); the file stays `PENDING` |
+| 409 | `not_ready` | seed missing |
+
+  Gemini quota problems don't fail the request: they surface as `FAILED` with a readable `error` (e.g. "Daily generate budget reached …").
+- **Failure semantics:**
+  - A failing page fails the whole run ("Page N: …") and writes no chunks.
+  - Re-running retries; finished pages come from the cache.
+  - A run interrupted by a server restart is marked `FAILED` at the next start.
+- **DB:** `Source` (status/progress/error), `Chunk` (replaced atomically on success).
 
 ### E6. `GET` / `HEAD` `/api/files/[id]`: ✅ LIVE (non-JSON)
 - **Code:** `apps/web/app/api/files/[id]/route.ts`; `getSourceFile()` + `parseByteRange()` in `sources.ts`.
@@ -478,7 +502,7 @@ Cold start `[mock]` (`mockStates.newLearnerMastery`): `needsDiagnostic: true`, e
 
 | Endpoint | Live? |
 |---|---|
-| health, learners (list/create), sources (upload/list/delete), files | ✅ yes (through `@sc/client` in `auto` mode) |
+| health, learners (list/create), sources (upload/list/delete/**ingest**), files | ✅ yes (through `@sc/client` in `auto` mode) |
 | everything else | mock (via `@sc/client`); HTML 404 if called directly |
 
 ## 5. Decisions (adopted 2026-10-14; the teammate may reopen any of them)
@@ -489,7 +513,7 @@ Cold start `[mock]` (`mockStates.newLearnerMastery`): `needsDiagnostic: true`, e
 | Q2 | Upload cap; video limit | **500 MiB**, streamed to disk; **MP4 duration parsed server-side**, > 20:00 rejected |
 | Q3 | Mock switching | **Per endpoint**, from the registry `status` (`NEXT_PUBLIC_API_MODE=auto`) |
 | Q4 | Report MCQ text | **`AttemptResult.options`** added |
-| Q5 | Fix a failed source | **`DELETE /api/sources/[id]`** (live); retry endpoint E18 proposed for Module 5 |
+| Q5 | Fix a failed source | **`DELETE /api/sources/[id]`** and **`POST /api/sources/[id]/ingest`** (re-run; cached pages free), both live |
 | Q6 | Tutor turns | Single-turn (decide finally in Module 10) |
 | Q7 | Weak topics | `band === "weak"`, lowest `p` first, ≤ 3 citations |
 | Q8 | MasteryEvent granularity | **One per answered question / chat turn** (mocks updated) |
@@ -501,6 +525,6 @@ Cold start `[mock]` (`mockStates.newLearnerMastery`): `needsDiagnostic: true`, e
 | Q14 | `GET /api/quiz/[id]` after submit | Allowed |
 | Q15 | Unknown `learnerId` | 404 `not_found` (`requireLearner()` implemented) |
 | Q16 | Embedded text | `title + "\n" + content` (Module 8) |
-| Q17 | Restart recovery | Mark stale PROCESSING as FAILED on boot (Module 5) |
+| Q17 | Restart recovery | **Implemented:** `instrumentation.ts` marks PROCESSING rows with no progress for 2 min as FAILED |
 | Q18 | Unsupported PPTX images | Skip, with a note in the slide content (Module 6) |
-| Q19 | Gemini limiter values | From AI Studio rate limits, via env (Module 5) |
+| Q19 | Gemini limiter values | **Implemented:** verified free tier (15/250K/500; 100/30K/1K), enforced below it (12/200K/450; 80/24K/900), env-overridable |

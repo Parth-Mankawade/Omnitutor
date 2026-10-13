@@ -71,6 +71,22 @@ describe("upload → list → delete", () => {
     await expectError(await raw(`/api/sources/${id}`, { method: "DELETE" }), 404, "not_found");
   });
 
+  it("upload never starts ingestion (stays PENDING, no Gemini usage)", async () => {
+    const before = (await api.health()).usage;
+    const { id } = await api.uploadSource(fileOf(await makePdf(2), `${TAG}-pending.pdf`));
+    await new Promise((r) => setTimeout(r, 1500));
+    assert.equal((await api.listSources()).find((s) => s.id === id)?.status, "PENDING");
+    assert.deepEqual((await api.health()).usage?.generate.requests, before?.generate.requests);
+    await api.deleteSource(id);
+  });
+
+  it("POST /ingest refuses non-PDF (409) and unknown ids (404) without calling Gemini", async () => {
+    const { id } = await api.uploadSource(fileOf(await makePptx(2), `${TAG}-ingest.pptx`));
+    await expectError(await raw(`/api/sources/${id}/ingest`, { method: "POST" }), 409, "not_ready", /PPTX ingestion isn't built yet/);
+    await expectError(await raw("/api/sources/no-such-source/ingest", { method: "POST" }), 404, "not_found");
+    await api.deleteSource(id);
+  });
+
   it("DELETE while PROCESSING is 409 not_ready", async () => {
     const { id } = await api.uploadSource(fileOf(await makePdf(1), `${TAG}-busy.pdf`));
     await prisma.source.update({ where: { id }, data: { status: "PROCESSING" } });

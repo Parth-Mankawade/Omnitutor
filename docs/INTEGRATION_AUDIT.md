@@ -385,3 +385,14 @@ The aim is a **vertical slice first**, so a real end-to-end demo exists early. P
 |---|---|
 | health, learners, sources (upload/list/delete), files | ✅ live; e2e tested on dev and production servers |
 | build/topics, chat/history/eval, quiz/submit/report, mastery | mock via `@sc/client` (`auto`) until Modules 9–14 |
+
+### 11.5 Updates after Module 4.5 + Module 5 (2026-10-14)
+
+| ID | Status | Evidence |
+|---|---|---|
+| I-11 video path unverified | 🟨 partly | Files API upload + 1 generate call verified on the real 45 s sample (4,129 tokens ≈ 91 tokens/s). Segments are coarse (2 for 45 s); timestamp accuracy is checked in Module 7 |
+| I-12 no Gemini limiter | ✅ fixed | `limiter.ts`: RPM/TPM windows, concurrency, daily ledger (Pacific day), embeddings counted per text; 429 RetryInfo honoured; 17 unit tests; real runs stayed within limits |
+| I-13 MP4 duration | ✅ (real file) | Parser agrees with ffprobe on the real video (154.157 s) |
+| I-25 model choice | 🟨 | Flash Lite handled the real PDF well (47/47 facts, image-only pages included); video segmentation granularity still to evaluate |
+| New: N-6 | ✅ by design | Ingestion is explicit (`POST /api/sources/[id]/ingest`): uploads and all default tests spend 0 quota (e2e asserts usage unchanged) |
+| New: N-7 | noted | The Round Robin slide (page 9) contains one wrong FIFO cell; extraction reproduces it faithfully. Don't use it as ground truth (data/demo/README.md) |

@@ -1,21 +1,12 @@
 // The ONLY module that calls Gemini. Everything else goes through these helpers.
+// Every call passes the rate limiter (limiter.ts); deterministic calls can be cached (cache.ts).
 import { ApiError, FileState, GoogleGenAI, type Part } from "@google/genai";
 import { z } from "zod";
+import { readCache, writeCache } from "./cache";
+import { LlmError } from "./errors";
+import { limiter, type LimitKind } from "./limiter";
 
 export type ModelRole = "fast" | "strong";
-export type LlmErrorKind = "config" | "rate_limit" | "api" | "parse" | "validation" | "file";
-
-export class LlmError extends Error {
-  constructor(
-    public kind: LlmErrorKind,
-    message: string,
-    public cause?: unknown,
-  ) {
-    super(`[llm:${kind}] ${message}`);
-    this.name = "LlmError";
-  }
-}
-
 export type Usage = { inputTokens: number; outputTokens: number };
 
 export const EMBED_DIM = 768;
@@ -50,15 +41,80 @@ function toLlmError(e: unknown): LlmError {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** Gemini's 429 body carries a RetryInfo delay ("retryDelay": "36s" / "Please retry in 36.4s"). */
+export function retryDelayMs(e: unknown): number | undefined {
+  const s = e instanceof Error ? e.message : String(e);
+  const m = s.match(/retryDelay"?\s*:\s*"(\d+(?:\.\d+)?)s"/) ?? s.match(/retry in (\d+(?:\.\d+)?)\s*s/i);
+  return m ? Math.ceil(Number(m[1]) * 1000) : undefined;
+}
+
+/** Rough input-token estimate used to reserve TPM before a call (replaced by the real count after). */
+export function estimateInputTokens(parts: Part[], system?: string): number {
+  let t = 20 + Math.ceil((system?.length ?? 0) / 4);
+  for (const p of parts) {
+    if (p.text) t += Math.ceil(p.text.length / 4);
+    else if (p.inlineData?.mimeType === "application/pdf") t += 1_800; // one page; measured ~600 for a simple page
+    else if (p.inlineData) t += 1_300; // one image; measured ~1.1K for a small slide image
+    else if (p.fileData) t += 60_000; // video/file: callers should pass a real estimate
+  }
+  return t;
+}
+
+/**
+ * Runs `call` under the limiter: reserve → call → settle with actual tokens.
+ * Gemini 429s are retried after their retryDelay (clamped 5–60 s), up to 3 attempts; transient
+ * 5xx/network errors once. The limiter's own stops (cause "local-limit") are never retried.
+ */
+async function limited<T>(
+  kind: LimitKind,
+  requests: number,
+  estTokens: number,
+  call: () => Promise<{ value: T; inputTokens?: number }>,
+): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    const reservation = await limiter(kind).acquire(requests, estTokens);
+    try {
+      const { value, inputTokens } = await call();
+      reservation.settle(inputTokens);
+      return value;
+    } catch (e) {
+      reservation.settle();
+      const err = toLlmError(e);
+      if (err.kind === "rate_limit" && err.cause !== "local-limit" && attempt < 3) {
+        await sleep(Math.min(60_000, Math.max(5_000, retryDelayMs(e) ?? 15_000)));
+        continue;
+      }
+      // Transient server/network failure (5xx, "overloaded", fetch failed): one retry.
+      const status = e instanceof ApiError ? e.status : undefined;
+      if (err.kind === "api" && attempt < 2 && (status === undefined || status >= 500)) {
+        await sleep(2_000);
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
 /** Gemini's responseJsonSchema doesn't need the $schema marker Zod adds. */
 function geminiJsonSchema(schema: z.ZodType): unknown {
   const { $schema: _ignored, ...rest } = z.toJSONSchema(schema) as Record<string, unknown>;
   return rest;
 }
 
+/** Cache identity of a structured call: changing the model, the schema or the caller's key misses. */
+export function generateCacheKey(model: string, schema: z.ZodType, cacheKey: string): string {
+  return `${model}|${JSON.stringify(geminiJsonSchema(schema))}|${cacheKey}`;
+}
+
+/** Cache identity of one embedded text. */
+export function embedCacheKey(model: string, taskType: EmbedTask, text: string): string {
+  return `${model}|${EMBED_DIM}|${taskType}|${text}`;
+}
+
 /**
  * Structured call: response is constrained to `schema` and validated with Zod.
- * One retry on any failure except missing config.
+ * Parse/validation failures get one retry. With `cacheKey`, an identical earlier result
+ * (same model, schema and key) is returned from disk without calling Gemini.
  */
 export async function generateJson<S extends z.ZodType>(opts: {
   role: ModelRole;
@@ -66,37 +122,37 @@ export async function generateJson<S extends z.ZodType>(opts: {
   parts: Part[];
   system?: string;
   temperature?: number;
-}): Promise<{ data: z.infer<S>; usage: Usage }> {
+  /** Stable identity of this request (e.g. file hash + page + prompt version). Enables the cache. */
+  cacheKey?: string;
+  /** Override the input-token estimate (required for long videos). */
+  estimatedInputTokens?: number;
+}): Promise<{ data: z.infer<S>; usage: Usage; cached: boolean }> {
   const model = modelFor(opts.role);
   const responseJsonSchema = geminiJsonSchema(opts.schema);
-  let lastErr: LlmError | undefined;
+  const fullKey = opts.cacheKey && generateCacheKey(model, opts.schema, opts.cacheKey);
+  if (fullKey) {
+    const hit = await readCache<{ data: unknown; usage: Usage }>("generate", fullKey);
+    const parsed = hit && opts.schema.safeParse(hit.data);
+    if (parsed?.success) return { data: parsed.data, usage: { inputTokens: 0, outputTokens: 0 }, cached: true };
+  }
 
+  const est = opts.estimatedInputTokens ?? estimateInputTokens(opts.parts, opts.system);
+  let lastErr: LlmError | undefined;
   for (let attempt = 0; attempt < 2; attempt++) {
-    if (attempt > 0) await sleep(lastErr?.kind === "rate_limit" ? 5000 : 1000);
-    let text: string | undefined;
-    let usage: Usage = { inputTokens: 0, outputTokens: 0 };
-    try {
-      const res = await getClient().models.generateContent({
+    if (attempt > 0) await sleep(1000);
+    const res = await limited("generate", 1, est, async () => {
+      const r = await getClient().models.generateContent({
         model,
         contents: [{ role: "user", parts: opts.parts }],
-        config: {
-          systemInstruction: opts.system,
-          temperature: opts.temperature,
-          responseMimeType: "application/json",
-          responseJsonSchema,
-        },
+        config: { systemInstruction: opts.system, temperature: opts.temperature, responseMimeType: "application/json", responseJsonSchema },
       });
-      text = res.text;
-      usage = {
-        inputTokens: res.usageMetadata?.promptTokenCount ?? 0,
-        outputTokens: res.usageMetadata?.candidatesTokenCount ?? 0,
-      };
-    } catch (e) {
-      lastErr = toLlmError(e);
-      if (lastErr.kind === "config") throw lastErr;
-      continue;
-    }
-
+      return { value: r, inputTokens: r.usageMetadata?.promptTokenCount };
+    });
+    const usage: Usage = {
+      inputTokens: res.usageMetadata?.promptTokenCount ?? 0,
+      outputTokens: res.usageMetadata?.candidatesTokenCount ?? 0,
+    };
+    const text = res.text;
     if (!text) {
       lastErr = new LlmError("parse", "empty response");
       continue;
@@ -113,40 +169,69 @@ export async function generateJson<S extends z.ZodType>(opts: {
       lastErr = new LlmError("validation", z.prettifyError(parsed.error), parsed.error);
       continue;
     }
-    return { data: parsed.data, usage };
+    if (fullKey) await writeCache("generate", fullKey, { data: parsed.data, usage });
+    return { data: parsed.data, usage, cached: false };
   }
   throw lastErr ?? new LlmError("api", "unknown failure");
 }
 
 export type EmbedTask = "RETRIEVAL_DOCUMENT" | "RETRIEVAL_QUERY";
 
-/** Embeds texts (batched by 100) into EMBED_DIM-length vectors. */
+const estimateTextTokens = (s: string) => Math.ceil(s.length / 4) + 2;
+
+/**
+ * Embeds texts into EMBED_DIM vectors (order preserved). Each text is cached on disk; misses are
+ * batched so every call fits the per-minute request (1 per text) and token limits.
+ */
 export async function embed(texts: string[], taskType: EmbedTask): Promise<number[][]> {
   const model = envModel("EMBED_MODEL");
-  const out: number[][] = [];
-  for (let i = 0; i < texts.length; i += 100) {
-    const batch = texts.slice(i, i + 100);
-    try {
-      const res = await getClient().models.embedContent({
-        model,
-        contents: batch,
-        config: { taskType, outputDimensionality: EMBED_DIM },
-      });
-      const vectors = (res.embeddings ?? []).map((e) => e.values ?? []);
-      if (vectors.length !== batch.length || vectors.some((v) => v.length !== EMBED_DIM)) {
-        throw new LlmError("validation", `expected ${batch.length}×${EMBED_DIM} embeddings`);
-      }
-      out.push(...vectors);
-    } catch (e) {
-      throw toLlmError(e);
+  const keyOf = (t: string) => embedCacheKey(model, taskType, t);
+  const out: (number[] | undefined)[] = new Array(texts.length);
+  const missing: number[] = [];
+  for (const [i, t] of texts.entries()) {
+    const v = await readCache<number[]>("embed", keyOf(t));
+    if (v?.length === EMBED_DIM) out[i] = v;
+    else missing.push(i);
+  }
+
+  const lim = limiter("embed").limits;
+  const maxTexts = Math.min(100, lim.rpm);
+  const batches: number[][] = [];
+  let batch: number[] = [];
+  let batchTokens = 0;
+  for (const i of missing) {
+    const tok = estimateTextTokens(texts[i]);
+    if (batch.length && (batch.length >= maxTexts || batchTokens + tok > lim.tpm)) {
+      batches.push(batch);
+      batch = [];
+      batchTokens = 0;
+    }
+    batch.push(i);
+    batchTokens += tok;
+  }
+  if (batch.length) batches.push(batch);
+
+  for (const b of batches) {
+    const contents = b.map((i) => texts[i]);
+    const est = contents.reduce((s, t) => s + estimateTextTokens(t), 0);
+    const vectors = await limited("embed", b.length, est, async () => {
+      const res = await getClient().models.embedContent({ model, contents, config: { taskType, outputDimensionality: EMBED_DIM } });
+      return { value: (res.embeddings ?? []).map((e) => e.values ?? []) };
+    });
+    if (vectors.length !== b.length || vectors.some((v) => v.length !== EMBED_DIM)) {
+      throw new LlmError("validation", `expected ${b.length}×${EMBED_DIM} embeddings, got ${vectors.length}`);
+    }
+    for (const [j, i] of b.entries()) {
+      out[i] = vectors[j];
+      await writeCache("embed", keyOf(texts[i]), vectors[j]);
     }
   }
-  return out;
+  return out as number[][];
 }
 
 export type UploadedFile = { name: string; uri: string; mimeType: string };
 
-/** Uploads a local file to the Gemini Files API and waits until it is ACTIVE. */
+/** Uploads a local file to the Gemini Files API and waits until it is ACTIVE (not a generate request). */
 export async function uploadFile(
   path: string,
   mimeType: string,

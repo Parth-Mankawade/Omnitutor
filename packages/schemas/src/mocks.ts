@@ -121,6 +121,11 @@ export const mocks = {
     ok: true,
     db: { ok: true, latencyMs: 2 },
     env: { DATABASE_URL: true, APP_GEMINI_API_KEY: true, LLM_MODEL_FAST: true, LLM_MODEL_STRONG: true, EMBED_MODEL: true, REFUSAL_TAU: true },
+    usage: {
+      day: "2026-10-14",
+      generate: { requests: 12, inputTokens: 14_210, requestsPerDay: 450, requestsPerMinute: 12 },
+      embed: { requests: 31, inputTokens: 2_480, requestsPerDay: 900, requestsPerMinute: 80 },
+    },
   },
   listSources: [
     { id: "src-pdf", type: "PDF", filename: PDF.filename, status: "READY", error: null, progressDone: 28, progressTotal: 28, chunkCount: 61, createdAt: at(0) },
@@ -129,6 +134,7 @@ export const mocks = {
   ],
   uploadSource: { id: "src-video", status: "PROCESSING" },
   deleteSource: { id: "src-bad" },
+  ingestSource: { id: "src-pdf", status: "PROCESSING" },
   listLearners: [
     { id: "demo-learner", name: "Demo Learner", createdAt: T0 },
     { id: "learner-asha", name: "Asha", createdAt: at(5) },

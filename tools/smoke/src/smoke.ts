@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createPartFromBase64, createPartFromUri } from "@google/genai";
 import { z } from "zod";
-import { deleteFile, embed, generateJson, modelFor, uploadFile, type Usage } from "@sc/core";
+import { deleteFile, embed, generateJson, modelFor, readMp4DurationSec, todayUsage, uploadFile, type Usage } from "@sc/core";
 import { makeBarsPng, makeSchedulingPdf } from "./fixtures";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -76,6 +76,7 @@ const checks: Record<string, () => Promise<Result>> = {
   // 4. Video via Files API → timestamped segments (same shape as video ingestion).
   async video() {
     if (!existsSync(VIDEO)) return { ok: true, skipped: true, detail: "no tools/smoke/fixtures/sample.mp4 — add a short mp4 to run" };
+    const durationSec = (await readMp4DurationSec(VIDEO)) ?? 60;
     const t0 = Date.now();
     const file = await uploadFile(VIDEO, "video/mp4");
     const uploadMs = Date.now() - t0;
@@ -90,10 +91,16 @@ const checks: Record<string, () => Promise<Result>> = {
           createPartFromUri(file.uri, file.mimeType),
           { text: "Split this video into coherent segments. For each give tStart and tEnd in seconds, the spoken transcript, a description of what is on screen, and key concepts." },
         ],
+        estimatedInputTokens: Math.ceil(durationSec * 300) + 500, // reserve TPM: ~300 tokens/s until measured
       });
       const s = data.segments;
       const ok = s.length > 0 && s.every((x) => x.tEnd >= x.tStart && x.tStart >= 0);
-      return { ok, detail: `upload+ACTIVE ${uploadMs} ms, ${s.length} segments, first [${s[0]?.tStart}s–${s[0]?.tEnd}s] "${s[0]?.transcript.slice(0, 60)}…"`, usage };
+      const rate = usage.inputTokens / durationSec;
+      return {
+        ok,
+        detail: `${durationSec.toFixed(1)} s video → ${usage.inputTokens} input tokens (≈${rate.toFixed(0)} tokens/s), upload+ACTIVE ${uploadMs} ms, ${s.length} segments, first [${s[0]?.tStart}s–${s[0]?.tEnd}s] "${s[0]?.transcript.slice(0, 60)}…"`,
+        usage,
+      };
     } finally {
       await deleteFile(file.name).catch(() => {});
     }
@@ -144,7 +151,9 @@ async function main() {
     const tok = r.usage ? ` tokens in/out ${r.usage.inputTokens}/${r.usage.outputTokens}` : "";
     console.log(`${mark}  ${name.padEnd(7)} ${String(ms).padStart(6)} ms${tok}\n      ${r.detail}`);
   }
+  const u = todayUsage();
   console.log(`\n${names.length - failed}/${names.length} passed · total tokens in/out ${total.inputTokens}/${total.outputTokens}`);
+  console.log(`today (${u.day}, counted by this app): generate ${u.generate.requests}/${u.limits.generate.rpd} · embed ${u.embed.requests}/${u.limits.embed.rpd}`);
   process.exit(failed ? 1 : 0);
 }
 
