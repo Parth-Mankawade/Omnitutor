@@ -86,12 +86,14 @@ OS CPU scheduling: 1 NPTEL/OCW lecture (15–20 min), 1 textbook chapter (20–3
 ## Ownership
 - Parth: packages/core (ingest, llm, retrieve, tutor, quiz, bkt), packages/db (Prisma schema), apps/web/app/api routes.
 - Teammate: dataset, test set, tools/eval, tools/sim, UI pages (apps/web/app) against mocked JSON, README, demo script.
-- Shared contract: `packages/schemas` (Zod) for Chunk, TutorAnswer, Quiz, Report — agree first.
+- Shared contract: `packages/schemas` (Zod), the source of truth for every API request and response. API routes must validate with it. Errors use `ApiErrorBody`.
+- Promised API for the teammate's simulator: `@sc/core` exports `updateMastery(p: number, correct: boolean, type: QuestionType, weight?: number): number` (Module 11).
 
 ## Status
 - [ ] Confirm deadline on Devpost
 - [x] Module 0: skeleton (Turborepo, Postgres, Prisma, /api/health) — see docs/PROGRESS.md
 - [x] Module 1: Gemini wrapper (`packages/core/src/llm.ts`) + `npm run smoke` — 4/4 pass, video check needs a sample mp4
 - [x] Module 2: Prisma schema (11 tables) + migration `init` + seed + `npm run db:verify` 12/12
-- [ ] Module 3: `@sc/schemas` shared Zod contract — next
+- [x] Module 3: `@sc/schemas` contract (14 endpoints, mocks, 53 tests); teammate brief in docs/TEAMMATE_BRIEF.md
+- [ ] Module 4: upload + `/api/files/[id]` (Range) + learners endpoints — next
 - [ ] Everything else

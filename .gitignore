@@ -29,3 +29,7 @@ coverage/
 
 # smoke-test video fixture
 /tools/smoke/fixtures/*.mp4
+
+# demo dataset (lecture video, textbook PDF, slide deck); too large for git
+/data/demo/*
+!/data/demo/README.md

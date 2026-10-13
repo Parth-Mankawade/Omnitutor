@@ -4,12 +4,18 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./mocks": "./src/mocks.ts"
   },
   "scripts": {
+    "test": "tsx --test \"test/**/*.test.ts\"",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@prisma/client": "6.19.3",
+    "tsx": "4.23.15"
   }
 }

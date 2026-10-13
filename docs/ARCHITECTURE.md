@@ -206,40 +206,52 @@ Each update writes `Mastery` and a `MasteryEvent(before, after, source)`, which 
 
 ---
 
-## 7. Shared contract — `packages/schemas` (`@sc/schemas`)
+## 7. Shared contract (`packages/schemas`, imported as `@sc/schemas`)
 
-Agree on this **first**. The UI is built against mocked JSON in exactly these shapes.
+**Source of truth: `packages/schemas/src/*.ts`** (Zod). The API validates requests and responses with it, and the UI and `tools/eval` import its types. Change it only by agreement; `npm run test` must stay green.
 
-```ts
-Citation      = { chunkId, sourceId, sourceType: "PDF"|"PPTX"|"VIDEO",
-                  page?, slide?, tStart?, tEnd?, excerpt }
-TutorAnswer   = { coverage, refused: boolean, blocks: [{ text, origin, citations: Citation[] }] }
-QuizQuestion  = { id, topicId, type, difficulty, stem, options?: string[] }   // no answer to client
-Quiz          = { assessmentId, kind, questions: QuizQuestion[] }
-QuizReport    = { perTopic: [{ topicId, name, correct, total, masteryBefore, masteryAfter }],
-                  misconceptions: [{ label, topicId, count }],
-                  revisit: Citation[],
-                  attempts: [{ questionId, correct, feedback: { text, citations: Citation[] } }] }
-MasteryView   = { topics: [{ id, name, p, n, prereqIds }], history: [{ topicId, at, p, source }] }
-```
+| File | Shapes |
+|---|---|
+| `common.ts` | Enums (kept in sync with Prisma by a test), `Id`, `IsoDate`, `Probability`, `ApiErrorBody` |
+| `citation.ts` | `Citation`: PDF `{page}` · PPTX `{slide}` · VIDEO `{tStart,tEnd}`, plus `excerpt`. Helpers `formatLocator`, `citationHref`, `formatTime` |
+| `course.ts` | `SourceView`, `UploadResponse`, `TopicView`, `BuildResponse`, `Learner`, `ACCEPTED_UPLOADS` |
+| `tutor.ts` | `ChatRequest`, `TutorBlock`, `TutorAnswer`, `ChatMessageView`, `MasteryUpdate` |
+| `quiz.ts` | `CreateQuizRequest`, `QuizQuestion` (client-safe), `Quiz`, `QuizResponse`, `SubmitRequest`, `QuizReport` |
+| `mastery.ts` | `MasteryView`, `masteryBand()`, `MASTERY_BANDS` (0.4 / 0.7) |
+| `eval.ts` | `EvalAnswerResponse`, `TestSetItem`, `TestSet`, `testSetGaps()` |
+| `endpoints.ts` | Registry: method, path, request schema, response schema, and the backend module that implements each route |
+| `mocks.ts` | Mock response for every endpoint plus extra UI states (`@sc/schemas/mocks`) |
+
+**Rules the contract enforces (tested):**
+- **Grounding:** a `material` block cites at least one excerpt, and an `outside` block never cites. A refused answer has no material blocks, and `NOT_COVERED` is always refused.
+- **One locator per citation:** a PDF citation needs `page`, a slide needs `slide`, a video needs `tStart ≤ tEnd`.
+- **No answer leaks:** a `QuizQuestion` never contains the answer, explanation or misconception labels. Unknown keys are stripped.
+- **Mastery bands:** `band` must match `p`, and the same thresholds drive quiz difficulty.
+- **Errors:** every error response is `{ error: { code, message } }`, with code `bad_request | not_found | not_ready | rate_limited | llm_error | internal`.
 
 ---
 
 ## 8. API surface
 
-| Method & path | Body → Response |
-|---|---|
-| `GET /api/health` | → `{ok, db, env, gemini}` |
-| `POST /api/sources` | multipart `file` → `{id, status}` |
-| `GET /api/sources` | → `[{id, type, name, status, error, chunkCount}]` |
-| `GET /api/files/[id]` | → original bytes, supports `Range` |
-| `POST /api/build` | → `{topics:[...]}` |
-| `POST /api/chat` | `{learnerId, message}` → `TutorAnswer` |
-| `POST /api/quiz` | `{learnerId, kind, topicIds?}` → `Quiz` |
-| `POST /api/quiz/[id]/submit` | `{responses:[{questionId, response}]}` → `QuizReport` |
-| `GET /api/mastery?learnerId=` | → `MasteryView` |
-| `GET/POST /api/learners` | list / create |
-| `POST /api/eval/answer` | `{question}` → `{answer, contexts[], citations, refused}` |
+| Method & path | Request → Response (`@sc/schemas`) | Module |
+|---|---|---|
+| `GET /api/health[?gemini=1]` | → `{ok, db, env, gemini?}` | 0 ✅ |
+| `GET /api/sources` | → `SourceView[]` | 4 |
+| `POST /api/sources` | multipart `file` → `UploadResponse` | 4 |
+| `GET /api/files/[id]` | → original bytes, HTTP Range | 4 |
+| `GET /api/learners` / `POST /api/learners` | → `Learner[]` / `CreateLearnerRequest` → `Learner` | 4 |
+| `POST /api/build` | `BuildRequest` → `BuildResponse` | 9 |
+| `GET /api/topics` | → `TopicView[]` | 9 |
+| `POST /api/chat` | `ChatRequest` → `TutorAnswer` | 10 |
+| `GET /api/chat?learnerId=` | → `ChatMessageView[]` | 10 |
+| `POST /api/eval/answer` | `EvalAnswerRequest` → `EvalAnswerResponse` | 10 |
+| `POST /api/quiz` | `CreateQuizRequest` → `Quiz` | 12 |
+| `GET /api/quiz/[id]` | → `Quiz` | 12 |
+| `POST /api/quiz/[id]/submit` | `SubmitRequest` → `QuizReport` | 13 |
+| `GET /api/quiz/[id]/report` | → `QuizReport` | 13 |
+| `GET /api/mastery?learnerId=` | → `MasteryView` | 14 |
+
+`courseId` is optional everywhere and defaults to the single course (`demo-course`).
 
 ---
 
@@ -314,6 +326,8 @@ curl localhost:3000/api/health
 | `npm run db:seed` | Idempotent seed: `demo-course`, `demo-learner` |
 | `npm run db:verify` | 12 schema behaviour checks on a throwaway course |
 | `npm run db:studio` | Prisma's table browser (alternative to Beekeeper) |
+| `npm run test` | Contract tests (`@sc/schemas`, 53 tests) |
+| `npm run db:deploy` | Apply existing migrations without creating new ones (teammate setup) |
 | `npm run smoke [-- json pdf slides video embed]` | Gemini smoke test (all checks, or the named ones) |
 | `npm run models:list` | List models available to `APP_GEMINI_API_KEY` |
 

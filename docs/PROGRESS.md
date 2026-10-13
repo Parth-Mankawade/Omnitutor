@@ -13,8 +13,8 @@ Legend: ✅ done & verified · 🟡 in progress / awaiting review · ⬜ not sta
 |---|---|---|---|
 | 0 | Skeleton: Turborepo (web/core/db/schemas) + Postgres + Prisma + `/api/health` | ✅ | §4 log |
 | 1 | Gemini wrapper (`packages/core/src/llm.ts`) + smoke test (`tools/smoke`) | ✅ (video check deferred: no sample mp4) | §4 log |
-| 2 | Prisma schema (11 tables) + migration `init` + seed + `db:verify` | 🟡 awaiting review | §4 log |
-| 3 | `@sc/schemas` shared contract | ⬜ | — |
+| 2 | Prisma schema (11 tables) + migration `init` + seed + `db:verify` | ✅ | §4 log |
+| 3 | `@sc/schemas` contract (14 endpoints) + mocks + 53 contract tests + teammate brief | 🟡 awaiting review | §4 log |
 | 4 | Upload + `/api/files/[id]` (Range) | ⬜ | — |
 | 5 | PDF ingestion (text + figures, page cite) | ⬜ | — |
 | 6 | PPTX ingestion (slide cite) | ⬜ | — |
@@ -54,6 +54,7 @@ Legend: ✅ done & verified · 🟡 in progress / awaiting review · ⬜ not sta
 | Prisma CLI → DB (reads root `.env`) | ✅ connects to localhost:5434 | 2026-10-13 |
 | Migrations (`npm run db:status`) | ✅ `init` applied, schema up to date | 2026-10-14 |
 | Schema checks (`npm run db:verify`) | ✅ 12/12 | 2026-10-14 |
+| Contract tests (`npm run test`) | ✅ 53/53 | 2026-10-14 |
 
 Live check: `GET http://localhost:3000/api/health` (Postman or curl). Add `?gemini=1` to also check the key and models (no tokens used).
 DB GUI: PostgreSQL · `localhost:5434` · user `study` · password `study` · db `study`
@@ -118,6 +119,24 @@ Migration `init`: 11 tables, 9 enums, 18 foreign keys, 12 indexes. Seed: course 
 | `/api/health` after schema change | ✅ HTTP 200 | |
 | typecheck / lint | ✅ 5/5, 0 problems | |
 
+### Module 3 — Shared contract `@sc/schemas` — 2026-10-14
+Files: `common`, `citation`, `course`, `tutor`, `quiz`, `mastery`, `eval`, `endpoints` (registry of 14 JSON endpoints), `mocks` (one per endpoint + 4 extra UI states).
+
+| Test group (`npm run test`, node:test via tsx) | Tests | Result |
+|---|---|---|
+| Every endpoint mock validates against its response schema; no missing/extra mocks; extra UI states valid | 16 | ✅ |
+| Valid requests parse; invalid ones rejected (QUIZ without topics, blank message, duplicate answers, malformed response) | 5 | ✅ |
+| Citations: exactly one locator per type, tEnd ≥ tStart, positive page, non-empty excerpt | 5 | ✅ |
+| Grounding: material ⇒ ≥ 1 citation; outside ⇒ none; refused ⇒ no material; NOT_COVERED ⇒ refused | 6 | ✅ |
+| Quiz safety: client question strips answer/explanation/misconceptions/verifier data; MCQ ≥ 2 options; difficulty 1–3 | 3 | ✅ |
+| Mastery bands (0.4 / 0.7 boundaries) + band/p consistency | 2 | ✅ |
+| Helpers: formatTime, formatLocator, citationHref | 3 | ✅ |
+| Eval test-set schema + composition gaps | 4 | ✅ |
+| Zod enums == Prisma enums (9) | 9 | ✅ |
+| **Total** | **53** | **✅ 53/53** |
+
+Other checks: all 14 mocks validate inside the Next.js app via `@sc/schemas` + `@sc/schemas/mocks` (temporary route, removed) ✅; the brief's `api.ts` fetch snippet typechecks ✅; DB has no drift after the schema comment edit (`migrate diff` → no difference) ✅; typecheck 5/5, lint clean ✅.
+
 ## 5. Accuracy / eval metrics (filled in Module 15)
 
 | Metric | Target | Current |
@@ -139,6 +158,9 @@ Migration `init`: 11 tables, 9 enums, 18 foreign keys, 12 indexes. Seed: course 
 - **Windows DLL lock:** `prisma generate` fails with EPERM while the dev server runs. Typecheck no longer depends on it. The client is generated on `npm install` (postinstall) and at `npm run dev` start.
 - Schema additions beyond the original plan (each needed by a later module): Source `filename/mimeType/sizeBytes/progressDone/progressTotal/pageCount/durationSec/gemini*`; Chunk `seq/title/conceptLabels`; Topic `seq/embedding`; Question `assessmentId/position/explanation/verifierAnswer`; Assessment `status/courseId/submittedAt`; Attempt `score`; MasteryEvent `attemptId/chatMessageId`; ChatMessage `blocks/refused/topScore/courseId`.
 - **Rebuilding topics wipes mastery and questions for those topics** (cascade). That's acceptable for the demo: build the course once, before learners start.
+- Contract additions vs. the original API list: `GET /api/topics` (quiz scope picker), `GET /api/chat?learnerId=` (history), `GET /api/quiz/[id]` and `GET /api/quiz/[id]/report` (pages load after navigation), `TutorAnswer.masteryUpdates` (shows learner-model updates from chat), `MasteryView.needsDiagnostic` (cold start), standard `ApiErrorBody`.
+- **Promised to teammate:** Module 11 exports `updateMastery(p, correct, type, weight?) => number` from `@sc/core` (the simulator depends on it).
+- `data/demo/` created for the dataset (gitignored except its README).
 - Considered and deferred: an `LlmCall` table logging tokens per call (useful for quota tracking). Add only if needed.
 - **Stop the dev server before `npm install`**: `@sc/db`'s postinstall (`prisma generate`) hits the same Windows DLL lock.
 - `@sc/core` and `@sc/schemas` are `"type": "module"`. Without it `tsx` loaded them as CommonJS and named exports failed. `@sc/db` stays CommonJS because `prisma.config.ts` uses `__dirname`.

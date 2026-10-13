@@ -21,7 +21,9 @@
     "db:migrate": "npm run db:migrate -w @sc/db --",
     "db:seed": "npm run db:seed -w @sc/db",
     "db:verify": "npm run db:verify -w @sc/db",
-    "db:studio": "npm run db:studio -w @sc/db"
+    "db:studio": "npm run db:studio -w @sc/db",
+    "test": "turbo test",
+    "db:deploy": "npm run db:deploy -w @sc/db"
   },
   "devDependencies": {
     "@types/node": "^20",

@@ -222,7 +222,7 @@ model Attempt {
   id            String   @id @default(cuid())
   assessmentId  String
   questionId    String
-  // MCQ: { index: number } · NUMERIC: { value: number } · SHORT: { text: string }
+  // QuizResponse in @sc/schemas: { type: "MCQ", index } · { type: "NUMERIC", value } · { type: "SHORT", text }
   response      Json
   correct       Boolean
   score         Float // 0..1; partial credit for SHORT, 0/1 otherwise
