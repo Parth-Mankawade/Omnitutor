@@ -1,0 +1,9 @@
+// Module 0: connection only. Models are added in the schema module.
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}

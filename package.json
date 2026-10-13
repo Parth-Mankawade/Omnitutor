@@ -1,0 +1,27 @@
+{
+  "name": "study-companion",
+  "private": true,
+  "packageManager": "npm@11.9.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "typecheck": "turbo typecheck",
+    "lint": "turbo lint",
+    "db:up": "docker compose up -d --wait",
+    "db:down": "docker compose down",
+    "db:generate": "turbo db:generate",
+    "db:status": "npm run db:status -w @sc/db"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "turbo": "2.11.7",
+    "typescript": "^5"
+  },
+  "engines": {
+    "node": ">=20.12"
+  }
+}

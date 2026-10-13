@@ -1,0 +1,28 @@
+# dependencies
+node_modules/
+
+# build output
+.next/
+out/
+build/
+.turbo/
+*.tsbuildinfo
+next-env.d.ts
+
+# env (only the example is committed)
+.env*
+!.env.example
+
+# uploaded originals
+/data/uploads/*
+!/data/uploads/.gitkeep
+
+# python
+__pycache__/
+.venv/
+
+# misc
+.DS_Store
+*.pem
+npm-debug.log*
+coverage/
