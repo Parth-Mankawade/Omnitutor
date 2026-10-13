@@ -136,10 +136,18 @@ Examples `[mock]` (`citations` in `mocks.ts`):
 | E14 | POST | `/api/quiz/[id]/submit` | `paths.submitQuiz(id)` | 📄 | 13 (+11) | `SubmitRequest` | `QuizReport` |
 | E15 | GET | `/api/quiz/[id]/report` | `paths.report(id)` | 📄 | 13 | — | `QuizReport` |
 | E16 | GET | `/api/mastery` | `paths.mastery(learnerId)` | 📄 | 14 (+11) | query `LearnerQuery` | `MasteryView` |
-| E18 | POST | `/api/sources/[id]/ingest` | `paths.ingestSource(id)` | ✅ | 5 | — | `UploadResponse` (`PROCESSING`) |
+| E18 | POST | `/api/sources/[id]/ingest` | `paths.ingestSource(id)` | ✅ | 5 (PDF), 7 (video) | — | `UploadResponse` (`PROCESSING`) |
+| E20 | POST | `/api/search` | `paths.search()` | ✅ | 8 | `SearchRequest` | `SearchResponse` |
 | E19 | GET | `/api/assessments?learnerId=` (quiz history list) | — | 🔶 | — | — | — |
 
-Registry: `packages/schemas/src/endpoints.ts`, with 17 JSON endpoints (E1–E5, E7–E18) plus `NON_JSON_ROUTES.file` (E6).
+Registry: `packages/schemas/src/endpoints.ts`, with 18 JSON endpoints (E1–E5, E7–E18, E20) plus `NON_JSON_ROUTES.file` (E6).
+
+### E20. `POST /api/search`: ✅ LIVE (Module 8)
+- **Body:** `SearchRequest = { query: string (1–500, trimmed), k?: 1–20 (default 6), courseId? }`.
+- **Response 200:** `SearchResponse = { topScore, candidates, results: [{ score, citation: Citation }] }`. `score` is cosine similarity over all READY sources (PDF and video together). Citations follow §1.2 (PDF `page`, VIDEO `tStart`/`tEnd`, excerpt ≤ 600 chars).
+- **Cost:** 1 embedding request per new query; repeats are cached (verified: +0).
+- **Errors:** 400 invalid body · 409 `not_ready` if nothing is ingested yet.
+- **Real check:** Stage-1 test set hit@6 100%, hit@1 90%, MRR 0.95.
 
 ---
 
@@ -226,7 +234,7 @@ Registry: `packages/schemas/src/endpoints.ts`, with 17 JSON endpoints (E1–E5, 
 |---|---|---|
 | 404 | `not_found` | unknown id |
 | 409 | `not_ready` | already processing |
-| 409 | `not_ready` | not a PDF (`PPTX ingestion isn't built yet …`); the file stays `PENDING` |
+| 409 | `not_ready` | PPTX (`PPTX ingestion isn't built yet …`); the file stays `PENDING`. PDF and VIDEO are supported |
 | 409 | `not_ready` | seed missing |
 
   Gemini quota problems don't fail the request: they surface as `FAILED` with a readable `error` (e.g. "Daily generate budget reached …").

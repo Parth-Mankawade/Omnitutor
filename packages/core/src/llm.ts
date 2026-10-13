@@ -175,6 +175,13 @@ export async function generateJson<S extends z.ZodType>(opts: {
   throw lastErr ?? new LlmError("api", "unknown failure");
 }
 
+/** Cache-only lookup for a structured call (no network): lets callers skip expensive prep such as a video upload. */
+export async function cachedGenerateJson<S extends z.ZodType>(role: ModelRole, schema: S, cacheKey: string): Promise<z.infer<S> | undefined> {
+  const hit = await readCache<{ data: unknown }>("generate", generateCacheKey(modelFor(role), schema, cacheKey));
+  const parsed = hit && schema.safeParse(hit.data);
+  return parsed?.success ? parsed.data : undefined;
+}
+
 export type EmbedTask = "RETRIEVAL_DOCUMENT" | "RETRIEVAL_QUERY";
 
 const estimateTextTokens = (s: string) => Math.ceil(s.length / 4) + 2;
@@ -229,7 +236,7 @@ export async function embed(texts: string[], taskType: EmbedTask): Promise<numbe
   return out as number[][];
 }
 
-export type UploadedFile = { name: string; uri: string; mimeType: string };
+export type UploadedFile = { name: string; uri: string; mimeType: string; expiresAt: Date | null };
 
 /** Uploads a local file to the Gemini Files API and waits until it is ACTIVE (not a generate request). */
 export async function uploadFile(
@@ -249,7 +256,7 @@ export async function uploadFile(
     if (file.state !== FileState.ACTIVE || !file.uri || !file.name) {
       throw new LlmError("file", `file ${file.name} ended in state ${file.state}`);
     }
-    return { name: file.name, uri: file.uri, mimeType: file.mimeType ?? mimeType };
+    return { name: file.name, uri: file.uri, mimeType: file.mimeType ?? mimeType, expiresAt: file.expirationTime ? new Date(file.expirationTime) : null };
   } catch (e) {
     throw toLlmError(e);
   }

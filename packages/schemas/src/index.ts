@@ -10,4 +10,5 @@ export * from "./quiz";
 export * from "./mastery";
 export * from "./eval";
 export * from "./system";
+export * from "./search";
 export * from "./endpoints";

@@ -10,3 +10,4 @@ export * from "./course";
 export * from "./learners";
 export * from "./sources";
 export * from "./ingest/index";
+export * from "./retrieve";

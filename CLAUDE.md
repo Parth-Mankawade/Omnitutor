@@ -115,5 +115,8 @@ OS CPU scheduling: 1 NPTEL/OCW lecture (15–20 min), 1 textbook chapter (20–3
 - [x] Stage-1 dataset in `data/demo/` (validated; PDF = 8 lecture pages + Round Robin slide; ground truth `tools/e2e/stage1/expectations.json`; test set `data/demo/testset.stage1.json`)
 - [x] Module 4.5: Gemini limiter + cache + usage ledger (video measured ≈91 tokens/s)
 - [x] Module 5: PDF ingestion via `POST /api/sources/[id]/ingest`. Real PDF: 47/47 facts, 9 requests, re-run free
-- [ ] Next: Module 8 retrieval on the real chunks (Modules 6/7 need a real deck with pictures / approval for video ingestion)
+- [x] Module 7: video ingestion in ≤60 s windows (`videoMetadata` offsets). Real video: 12/12 facts at true time, mean error 0.3 s
+- [x] Module 8: retrieval + `POST /api/search`. Real test set: hit@6 100%, MRR 0.95. REFUSAL_TAU 0.55 is too low; scores overlap, so the tutor must use NOT_COVERED
+- [ ] Next: Module 6 (PPTX, needs a real deck), Module 9 (course build), Module 10 (tutor)
+- Real-data checks (spend quota only when inputs or prompts change; cached otherwise): `npm run stage1:pdf`, `npm run stage1:video`, `npm run stage1:retrieval`
 - [ ] Everything else

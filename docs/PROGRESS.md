@@ -7,29 +7,27 @@ Legend: ✅ done & verified · 🟡 in progress / awaiting review · ⬜ not sta
 
 ---
 
-## 0. Summary (2026-10-14, after Module 5)
+## 0. Summary (2026-10-14, after Modules 7 + 8)
 
-- **Done:**
-  - Modules 0–4 + contract v1.1.
-  - **Stage-1 dataset** in `data/demo/` (validated; PDF extended to 9 pages with a Round Robin slide).
-  - **Module 4.5:** Gemini rate limiter + result cache + usage ledger.
-  - **Module 5:** PDF ingestion via the explicit `POST /api/sources/[id]/ingest`.
-- **Real-data result:** your 9-page PDF was ingested in **12 s** for **9 Gemini requests + 14 embedding requests**:
-  - **47/47 ground-truth facts** found, including both image-only pages.
-  - The re-run cost **0 requests** (cache).
-- **Measured:** video ≈ **91 input tokens/s** (45 s smoke clip: 4,129 tokens), so a 20-min lecture ≈ 110K tokens fits the 250K/min limit.
-- **Gemini used today (app ledger):** generate 10/450, embed 14/900.
-- **Tests:** 194 unit/contract · 39 e2e · production build 0 warnings.
-- **Next:** Module 8 (retrieval) on the real chunks; Modules 6/7 (PPTX/video) need a real deck with pictures and a go-ahead for video ingestion.
-- **At risk:**
-  - Slide deck has no pictures (generated).
-  - PDF lacks FCFS/SJF/priority numericals for later quiz work.
-  - Deadline not confirmed.
+- **Done and verified on your real data:**
+  - **PDF ingestion (5):** 47/47 facts.
+  - **Video ingestion (7):** 12/12 on-screen facts at the right time, mean start error 0.3 s.
+  - **Retrieval (8):** hit@1 90%, hit@6 100%, MRR 0.95 on the Stage-1 test set.
+- **Knowledge base:** `process-scheduling-9pages.pdf` (14 chunks) + `cpu-scheduling-2min.mp4` (12 segments), searchable via `POST /api/search`.
+- **Gemini used today (app ledger):** generate 16/450 (54.6K input tokens), embed 52/900. AI Studio also counts 3 + 4 from the Module 1 smoke run (before the ledger).
+- **Tests:** 197 unit/contract · 39 e2e · production build 0 warnings.
+- **Not verified:**
+  - Video transcript word-accuracy (no reference transcript).
+  - PDF `#page=` / video seek in a real browser (needs the UI).
+  - Refusal threshold (too few questions to calibrate).
+- **Next:**
+  - Module 6 (PPTX) needs a real deck with pictures.
+  - Module 9 (course build) → Module 10 (tutor).
 - **Waiting on you:**
-  - Review Modules 4.5 + 5.
+  - Review.
   - Push.
-  - Confirm the Devpost deadline.
-  - Provide a real .pptx with pictures (Stage 2).
+  - Confirm the deadline.
+  - Real .pptx with pictures.
 
 ## 1. Backend modules (Parth): cross-referenced with ARCHITECTURE.md §10
 
@@ -43,9 +41,9 @@ Legend: ✅ done & verified · 🟡 in progress / awaiting review · ⬜ not sta
 | 4 | Learners API, upload (streamed, validated), sources list/delete, `/api/files/[id]` (Range) | file uploads; video seeks in browser | 🟡 awaiting review | 43 core + 37 e2e (dev **and** prod). **Browser seek not yet tried with a real mp4** (server Range verified) |
 | 4.5 | Gemini rate limiter + result cache + usage ledger (`limiter.ts`, `cache.ts`) | stay under free-tier limits; re-runs free | ✅ | 17 unit tests (fake clock); real: smoke + Stage-1 runs paced, re-run 0 requests |
 | 5 | PDF ingestion (`POST /api/sources/[id]/ingest`) | chunks with page + figure chunks | 🟡 awaiting review | **Real PDF: 14 chunks (5 figures), 47/47 facts, page locators exact, re-run free**; 12 unit tests (fake Gemini) + 2 e2e |
-| 6 | PPTX ingestion | one chunk per slide, in order | ⬜ | needs a .pptx |
-| 7 | Video ingestion | timestamped segments | ⬜ | needs an mp4 (≤ 20 min) |
-| 8 | Embeddings + retrieval | top-6 includes the right chunk | ⬜ | |
+| 6 | PPTX ingestion | one chunk per slide, in order | ⬜ | needs a real .pptx with pictures (the generated deck has none) |
+| 7 | Video ingestion (≤60 s windows via Files API `videoMetadata`) | timestamped segments | 🟡 awaiting review | **Real video: 12/12 facts at the true time, mean start error 0.3 s, coverage 100%, re-run free.** Transcript accuracy NOT verified |
+| 8 | Retrieval + `POST /api/search` | top-6 includes the right chunk | 🟡 awaiting review | **Real test set: hit@1 90%, hit@3/6 100%, MRR 0.95** (10 answerable questions, PDF + video) |
 | 9 | Course build + `/api/build`, `/api/topics` | 5–8 sensible topics, chunks tagged | ⬜ | |
 | 10 | Tutor API + grounding guards (+ `/api/eval/answer`) | cited answer; off-material refused | ⬜ | citation panel UI is teammate Task 3 |
 | 11 | BKT `updateMastery` (unit tested) | known sequences → expected values | ⬜ | signature promised to teammate |
@@ -94,13 +92,15 @@ Legend: ✅ done & verified · 🟡 in progress / awaiting review · ⬜ not sta
 | Gemini smoke (`npm run smoke`) | ✅ 5/5 (video run 2026-10-14 on the 45 s sample: 4,129 tokens ≈ 91 tokens/s) | 2026-10-14 |
 | Gemini usage today (`/api/health` → `usage`) | generate 10/450 · embed 14/900 (app ledger; AI Studio is authoritative) | 2026-10-14 |
 | Typecheck (7 workspaces) / lint | ✅ clean | 2026-10-14 |
-| Production build (`npm run build`) | ✅ 0 warnings; 6 dynamic API routes | 2026-10-14 |
+| Production build (`npm run build`) | ✅ 0 warnings; 7 dynamic API routes | 2026-10-14 |
 | Prisma CLI → DB (reads root `.env`) | ✅ connects to localhost:5434 | 2026-10-14 |
 | Migrations (`npm run db:status`) | ✅ `init` applied, schema up to date | 2026-10-14 |
 | Schema checks (`npm run db:verify`) | ✅ 12/12 | 2026-10-14 |
-| Unit + contract tests (`npm run test`) | ✅ 194/194 (schemas 106 · client 16 · core 72) | 2026-10-14 |
+| Unit + contract tests (`npm run test`) | ✅ 197/197 (schemas 109 · client 16 · core 72) | 2026-10-14 |
 | End-to-end (`npm run test:e2e`) | ✅ 39/39 on dev server (no Gemini usage) | 2026-10-14 |
 | Stage-1 real-data PDF check (`npm run stage1:pdf`) | ✅ 7/7 checks · 47/47 facts | 2026-10-14 |
+| Stage-1 real-data video check (`npm run stage1:video`) | ✅ 8/8 checks · 12/12 facts at true time | 2026-10-14 |
+| Stage-1 retrieval check (`npm run stage1:retrieval`) | ✅ hit@6 100%, MRR 0.95 | 2026-10-14 |
 
 Live check: `GET http://localhost:3000/api/health` (Postman or curl). Add `?gemini=1` to also check the key and models (no tokens used).
 DB GUI: PostgreSQL · `localhost:5434` · user `study` · password `study` · db `study`
@@ -231,6 +231,29 @@ Not verified yet:
 - The PDF iframe `#page=N` in a browser (needs the UI).
 - A real lecture file through the MP4 parser.
 
+### Module 7 — Video ingestion — 2026-10-14 (REAL Gemini, your video)
+| Attempt | What happened | Fix |
+|---|---|---|
+| v1: one call over the whole 154 s | Content right, first 46 s accurate (±0.6 s), then the 46–75 s slide was given 46–115 s: **every later timestamp ~39 s late, the last 2 sections missing** (6/12 facts at the right time) | Probe: the same model on a 60 s clip (Files API `videoMetadata` offsets) → **≤0.5 s error**. Rebuilt as ≤60 s windows, clip-relative times, per-window validation + cache |
+| v2 first run | Windows 1–2 OK; window 3 → **HTTP 400** "invalid duration": end offset `154.15727891156462s` exceeds the 9-decimal Duration format. Progress also showed 3/2 | Offsets formatted to 0.1 s; last window ends at floor(duration); progress = windows + 1 |
+| v2 final | **12/12 on-screen facts found, 12/12 in a segment overlapping the true time (±3 s), mean start error 0.3 s (max 0.9 s)**, 12 segments, coverage 100%, longest 28.9 s; re-run 0 requests | — |
+
+- **Known small flaw:** a word is cut at the 102.8 s window edge ("…is where it all comes together").
+- **NOT VERIFIED:** transcript word-accuracy (no reference transcript). It reads as natural speech, ~186 words/min.
+- **Cost of Module 7 (incl. failures and the probe):** about 6 generate requests (≈30K input tokens) + 22 embedding requests.
+
+### Module 8 — Retrieval — 2026-10-14 (REAL Gemini embeddings, your knowledge base)
+`retrieve()` embeds the question (`RETRIEVAL_QUERY`, cached), scores all 26 chunks by cosine similarity, and returns the top k as contract citations (excerpt ≤ 600 chars). Exposed as `POST /api/search`.
+
+| Check (`npm run stage1:retrieval`, 15 test-set questions) | Result |
+|---|---|
+| Answerable (6 PDF + 4 video): right page / time range in top 6 | **10/10 (hit@6 100%)**; hit@1 90%, hit@3 100%, MRR 0.95 |
+| Only rank-1 miss | "what does the clerk represent": rank 1 = the clerk illustration segment, rank 2 = the table segment that states it (0.81 vs 0.80) |
+| topScore answerable vs off-material | 0.713–0.824 vs 0.596–0.702 |
+| Extra natural query ("What happens to a process when it waits for I/O?") | top = page 5 state diagram, score 0.702: **same score as the off-material SJF question**. A score threshold alone can't separate them; the tutor needs the model's NOT_COVERED judgment, with τ only as a floor (~0.60). `REFUSAL_TAU` 0.55 is too low |
+| Repeated query | 0 new embedding requests (cache) |
+| Cost | 16 embedding requests, 0 generate |
+
 ### Stage-1 dataset preparation — 2026-10-14 (inputs: YOUR real files, read-only checks)
 | Check | Result |
 |---|---|
@@ -297,7 +320,9 @@ Manual review of all 14 chunks:
 | Quiz verify pass rate | report | — |
 | PDF ingestion fact recall (Stage-1 ground truth) | ≥ 90% | **100% (47/47)** |
 | Gemini cost: PDF ingestion (9 pages) | ~1 request/page | **9 requests, 8,091 input tokens; re-run 0** |
-| Gemini cost: video | — | **≈91 input tokens per second of video** |
+| Gemini cost: video | — | **≈91–96 input tokens per second of video**; 1 request per ≤60 s window |
+| Video timestamp accuracy (Stage-1, on-screen ground truth) | ≤ 3 s | **mean 0.3 s, max 0.9 s (12/12)** |
+| Retrieval hit@6 / hit@1 / MRR (Stage-1 test set) | ≥ 80% | **100% / 90% / 0.95** |
 | Sim: mastery gain, adaptive vs random | adaptive > random | — |
 | Sim: repetition rate | 0% | — |
 

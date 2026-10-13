@@ -6,7 +6,7 @@ import { z } from "zod";
 import {
   ApiErrorBody, MAX_UPLOAD_BYTES, MAX_UPLOAD_MB, endpoints, paths, sourceTypeFromFilename,
   type ApiErrorCode, type BuildRequest, type ChatRequest, type CreateLearnerRequest, type CreateQuizRequest,
-  type EndpointName, type EndpointResponse, type EvalAnswerRequest, type SubmitRequest,
+  type EndpointName, type EndpointResponse, type EvalAnswerRequest, type SearchRequest, type SubmitRequest,
 } from "@sc/schemas";
 import { mocks } from "@sc/schemas/mocks";
 
@@ -122,6 +122,8 @@ export function createApiClient(options: ApiClientOptions = {}) {
     /** Starts ingestion (spends Gemini quota; cached pages are free). Poll listSources for progress. */
     ingestSource: (id: string) => send("ingestSource", paths.ingestSource(id), { method: "POST" }),
 
+    /** Top-k chunks (as citations) for a question, with cosine scores. Costs 1 embedding request (cached per query). */
+    search: (body: SearchRequest) => sendJson("search", paths.search(), body),
     buildCourse: (body: BuildRequest = {}) => sendJson("buildCourse", paths.build(), body),
     listTopics: () => get("listTopics", paths.topics()),
 

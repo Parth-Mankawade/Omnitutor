@@ -121,12 +121,27 @@ Embedding requests count once per text. Defaults: Flash Lite 12 RPM / 200K TPM /
 | Locator | `slide` = 1-based presentation order | DEFINED (`Chunk.slide`) |
 | Progress | `progressTotal` = ⌈slides/5⌉ batches | DEFINED (schema comment) |
 
-### 4.3 Video (PLANNED, Module 7)
+### 4.3 Video (VERIFIED, Module 7; real data)
+
+**As built:**
+- The MP4 is uploaded once to the Files API (handle stored on `Source`, reused on retries, deleted after success).
+- It is processed in **equal windows of at most 60 s** (`videoMetadata` start/end offsets, one request each). Times are clip-relative and converted to whole-video seconds.
+- Each window is validated (coverage ≥ 60%), then cached per (file hash, window, prompt `video-v2-windowed`).
+- Segments are clamped, sorted and de-overlapped; a segment cut at a window edge is re-joined.
+- Chunk = transcript + `[On screen] …`, with `tStart`/`tEnd`.
+
+**Why windows:**
+- One request over the whole 154 s video drifted: every timestamp after 46 s was about 39 s late, and 2 sections were missing.
+- A 60 s window gave ≤0.5 s error.
+
+**Real result:** 12/12 on-screen facts in a segment overlapping the true time, mean start error 0.3 s, coverage 100%. **Transcript word-accuracy NOT verified.**
+
+Original plan (kept for reference):
 
 | Step | Detail | Evidence |
 |---|---|---|
 | Upload | `uploadFile(path, "video/mp4")` → Gemini Files API, polled every 2 s until `ACTIVE` (5-min timeout) | **VERIFIED** (smoke on the 45 s sample: upload + ACTIVE 7.6 s) |
-| Remote handle | `Source.geminiFileName`, `geminiFileUri`, `geminiFileExpiresAt` (remote copies expire after 48 h; the original stays in `data/uploads`) | DEFINED (schema) |
+| Remote handle | `Source.geminiFileName`, `geminiFileUri`, `geminiFileExpiresAt` (remote copies expire after 48 h; the original stays in `data/uploads`) | **VERIFIED** (stored during a run, cleared after success) |
 | "Transcription" | **No dedicated ASR.** One multimodal `generateJson` call on `LLM_MODEL_STRONG` (currently `gemini-3.1-flash-lite`) returns `segments: [{ tStart, tEnd, transcript, onScreen, conceptLabels }]` | Smoke: works, but only **2 segments for 45 s** (coarse). Module 7's prompt must request finer segments; timestamp accuracy to be checked against the known segment map (data/demo/README.md) |
 | Chunk | One `Chunk(kind=TRANSCRIPT)` per segment; `content = "<transcript>\n[On screen] <onScreen>"` (Q11, adopted) | PLANNED |
 | Locator | `tStart`, `tEnd` in seconds (float). Clamp to `[0, durationSec]`, but **`durationSec` is never measured** | DEFINED / UNRESOLVED |
@@ -145,8 +160,9 @@ Embedding requests count once per text. Defaults: Flash Lite 12 RPM / 200K TPM /
 | Cache | Per text, keyed by model + dimension + task type + text (`data/cache/embed/`) | **VERIFIED** (real re-run: 0 requests) |
 | Embedded text | `title ? title + "\n" + content : content` (Q16) | **VERIFIED** (`embedText`) |
 | Storage | `Chunk.embedding Float[]` → Postgres `DOUBLE PRECISION[]`; empty array until embedded | **VERIFIED** (`db:verify`: 768 values round-trip, max error 5.6e-17) |
-| Index | **No vector index** (pgvector is cut). Cosine is computed in JS over all chunks of the course | PLANNED (`retrieve.ts` doesn't exist) |
-| Query | Top 6 by cosine. `topScore` = best cosine. Refuse if `topScore < REFUSAL_TAU` (env, **placeholder 0.55, uncalibrated**) | PLANNED |
+| Index | **No vector index** (pgvector is cut). Cosine is computed in JS over all READY chunks of the course (26 now) | **VERIFIED** (`retrieve.ts`, `POST /api/search`) |
+| Query | Top k (default 6) by cosine; `topScore` = best cosine | **VERIFIED:** hit@6 100%, hit@1 90%, MRR 0.95 on the Stage-1 test set |
+| Refusal | Answerable 0.70–0.82 vs off-material 0.60–0.70 (overlapping at ~0.70). A score threshold alone can't decide, so the tutor must use the model's NOT_COVERED judgment with τ as a floor (~0.60). Placeholder 0.55 is too low | measured, not calibrated (15 questions) |
 | Topics | `Topic.embedding` (name + description) tags each chunk to its nearest topic at build time | DEFINED (schema) / PLANNED |
 
 ---

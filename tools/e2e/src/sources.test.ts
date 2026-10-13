@@ -82,7 +82,7 @@ describe("upload → list → delete", () => {
 
   it("POST /ingest refuses non-PDF (409) and unknown ids (404) without calling Gemini", async () => {
     const { id } = await api.uploadSource(fileOf(await makePptx(2), `${TAG}-ingest.pptx`));
-    await expectError(await raw(`/api/sources/${id}/ingest`, { method: "POST" }), 409, "not_ready", /PPTX ingestion isn't built yet/);
+    await expectError(await raw(`/api/sources/${id}/ingest`, { method: "POST" }), 409, "not_ready", /PPTX ingestion isn.t built yet/);
     await expectError(await raw("/api/sources/no-such-source/ingest", { method: "POST" }), 404, "not_found");
     await api.deleteSource(id);
   });

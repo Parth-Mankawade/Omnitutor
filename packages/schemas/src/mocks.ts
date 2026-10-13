@@ -135,6 +135,7 @@ export const mocks = {
   uploadSource: { id: "src-video", status: "PROCESSING" },
   deleteSource: { id: "src-bad" },
   ingestSource: { id: "src-pdf", status: "PROCESSING" },
+  search: { topScore: 0.81, candidates: 26, results: [{ score: 0.81, citation: citations.rrSlide }, { score: 0.74, citation: citations.rrVideo }] },
   listLearners: [
     { id: "demo-learner", name: "Demo Learner", createdAt: T0 },
     { id: "learner-asha", name: "Asha", createdAt: at(5) },

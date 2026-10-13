@@ -88,7 +88,7 @@ describe("requestIngestion / runIngestion (fake Gemini, real DB)", () => {
 
     const result = await job;
     assert.ok(result.ok, JSON.stringify(result));
-    assert.deepEqual({ ...result.stats }, { pages: 3, geminiCalls: 2, cachedPages: 1, inputTokens: 1800, outputTokens: 300 });
+    assert.deepEqual({ ...result.stats }, { units: 3, geminiCalls: 2, cached: 1, inputTokens: 1800, outputTokens: 300 });
     assert.deepEqual([...calls].sort(), [0, 1, 2]);
 
     const src = await prisma.source.findUniqueOrThrow({ where: { id } });
@@ -134,7 +134,7 @@ describe("requestIngestion / runIngestion (fake Gemini, real DB)", () => {
 
   it("non-PDF and unknown sources are refused", async () => {
     const deck = (await uploadSource({ body: chunked(await makePptx(2)), filename: `${TAG}-deck.pptx` })).id;
-    await assert.rejects(requestIngestion(deck, fakeDeps().deps), isCode("not_ready", /PPTX ingestion isn't built yet/));
+    await assert.rejects(requestIngestion(deck, fakeDeps().deps), isCode("not_ready", /PPTX ingestion isn.t built yet/));
     assert.equal((await prisma.source.findUniqueOrThrow({ where: { id: deck } })).status, "PENDING");
     await assert.rejects(requestIngestion("no-such-source", fakeDeps().deps), isCode("not_found"));
   });

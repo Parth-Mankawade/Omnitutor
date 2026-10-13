@@ -3,6 +3,7 @@
 import { PDFDocument } from "pdf-lib";
 import { z } from "zod";
 import { generateJson, type Usage } from "../llm";
+import type { ChunkDraft, IngestStats } from "./types";
 
 /** Bump when the prompt or schema changes: old cache entries then miss. */
 export const PDF_PROMPT_VERSION = "pdf-page-v1";
@@ -34,13 +35,7 @@ Rules:
 - Use only what is on the page. Do not add outside knowledge, explanations or corrections.
 - A page that only has a title yields one text block containing the title.`;
 
-export type ChunkDraft = {
-  kind: "TEXT" | "FIGURE";
-  title: string | null;
-  content: string;
-  page: number;
-  conceptLabels: string[];
-};
+const at = (page: number) => ({ page, slide: null, tStart: null, tEnd: null });
 
 /** Text groups longer than this start a new chunk (slides are short; textbook pages split by section). */
 export const MAX_TEXT_CHARS = 1_200;
@@ -53,7 +48,7 @@ export function pageChunks(page: number, ex: PdfPageExtraction): ChunkDraft[] {
   let groupParts: string[] = [];
   let groupChars = 0;
   const flush = () => {
-    if (groupParts.length) out.push({ kind: "TEXT", title: groupTitle, content: groupParts.join("\n\n"), page, conceptLabels: labels });
+    if (groupParts.length) out.push({ kind: "TEXT", title: groupTitle, content: groupParts.join("\n\n"), ...at(page), conceptLabels: labels });
     groupTitle = null;
     groupParts = [];
     groupChars = 0;
@@ -64,7 +59,7 @@ export function pageChunks(page: number, ex: PdfPageExtraction): ChunkDraft[] {
     if (!content) continue;
     if (b.kind === "figure") {
       flush(); // keep reading order: text before the figure stays before it
-      out.push({ kind: "FIGURE", title: title ?? "Figure", content, page, conceptLabels: labels });
+      out.push({ kind: "FIGURE", title: title ?? "Figure", content, ...at(page), conceptLabels: labels });
       continue;
     }
     const text = b.kind === "table" && title ? `${title}\n${content}` : content;
@@ -108,8 +103,6 @@ export const extractPdfPage: ExtractPage = async (pageBytes, { fileSha, pageInde
   return { extraction: r.data, cached: r.cached, usage: r.usage };
 };
 
-export type PdfStats = { pages: number; geminiCalls: number; cachedPages: number; inputTokens: number; outputTokens: number };
-
 /**
  * Extracts every page (up to `concurrency` at once; the rate limiter paces the calls).
  * Stops taking new pages after the first failure; the error says which page failed.
@@ -118,7 +111,7 @@ export async function extractPdf(
   bytes: Uint8Array,
   fileSha: string,
   opts: { extractPage?: ExtractPage; onPageDone?: () => Promise<void> | void; concurrency?: number } = {},
-): Promise<{ chunks: ChunkDraft[]; stats: PdfStats }> {
+): Promise<{ chunks: ChunkDraft[]; stats: IngestStats }> {
   const extract = opts.extractPage ?? extractPdfPage;
   const pages = await splitPdf(bytes);
   const results: PageResult[] = new Array(pages.length);
@@ -139,9 +132,9 @@ export async function extractPdf(
   };
   await Promise.all(Array.from({ length: Math.min(opts.concurrency ?? 4, pages.length) }, worker));
 
-  const stats: PdfStats = { pages: pages.length, geminiCalls: 0, cachedPages: 0, inputTokens: 0, outputTokens: 0 };
+  const stats: IngestStats = { units: pages.length, geminiCalls: 0, cached: 0, inputTokens: 0, outputTokens: 0 };
   for (const r of results) {
-    if (r.cached) stats.cachedPages++;
+    if (r.cached) stats.cached++;
     else stats.geminiCalls++;
     stats.inputTokens += r.usage.inputTokens;
     stats.outputTokens += r.usage.outputTokens;

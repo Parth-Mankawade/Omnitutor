@@ -25,7 +25,9 @@
     "test": "turbo test",
     "db:deploy": "npm run db:deploy -w @sc/db",
     "test:e2e": "npm run test:e2e -w @sc/e2e",
-    "stage1:pdf": "npm run stage1:pdf -w @sc/e2e"
+    "stage1:pdf": "npm run stage1:pdf -w @sc/e2e",
+    "stage1:video": "npm run stage1:video -w @sc/e2e",
+    "stage1:retrieval": "npm run stage1:retrieval -w @sc/e2e"
   },
   "devDependencies": {
     "@types/node": "^20",

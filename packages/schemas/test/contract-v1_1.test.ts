@@ -22,6 +22,7 @@ describe("paths agree with the registry", () => {
     uploadSource: paths.uploadSource("Galvin – Ch5 (CPU).pdf"),
     deleteSource: paths.source("src/1"),
     ingestSource: paths.ingestSource("src-1"),
+    search: paths.search(),
     buildCourse: paths.build(),
     listTopics: paths.topics(),
     chat: paths.chat(),

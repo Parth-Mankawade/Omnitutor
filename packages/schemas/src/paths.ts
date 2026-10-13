@@ -11,6 +11,7 @@ export const paths = {
   source: (id: string) => `/api/sources/${seg(id)}`,
   ingestSource: (id: string) => `/api/sources/${seg(id)}/ingest`,
   file: (sourceId: string) => `/api/files/${seg(sourceId)}`,
+  search: () => "/api/search",
   build: () => "/api/build",
   topics: () => "/api/topics",
   chat: () => "/api/chat",
