@@ -6,7 +6,7 @@ const nextConfig: NextConfig = {
   cacheComponents: true,
   partialPrefetching: true,
   // Workspace packages ship TypeScript source.
-  transpilePackages: ["@sc/core", "@sc/db", "@sc/schemas"],
+  transpilePackages: ["@sc/client", "@sc/core", "@sc/db", "@sc/schemas"],
   turbopack: {
     root: path.join(__dirname, "../.."),
     rules: {

@@ -1,40 +1,59 @@
 import { z } from "zod";
-import { BuildRequest, BuildResponse, CreateLearnerRequest, Learner, SourceView, TopicView, UploadResponse } from "./course";
+import {
+  BuildRequest, BuildResponse, CreateLearnerRequest, DeleteSourceResponse, Learner, LearnerQuery,
+  SourceView, TopicView, UploadQuery, UploadResponse,
+} from "./course";
 import { EvalAnswerRequest, EvalAnswerResponse } from "./eval";
 import { MasteryView } from "./mastery";
 import { CreateQuizRequest, Quiz, QuizReport, SubmitRequest } from "./quiz";
+import { HealthQuery, HealthResponse } from "./system";
 import { ChatMessageView, ChatRequest, TutorAnswer } from "./tutor";
 
+export type HttpMethod = "GET" | "POST" | "DELETE";
+
 type Endpoint = {
-  method: "GET" | "POST";
+  method: HttpMethod;
+  /** Next.js route pattern; the handler lives in apps/web/app<path>/route.ts. Build URLs with `paths`. */
   path: string;
-  /** JSON body schema, a description for non-JSON input, or null (no body). */
-  request: z.ZodType | string | null;
+  /** Query-string schema, or null. */
+  query: z.ZodObject | null;
+  /** JSON body schema, "binary" (raw file bytes as the body), or null (no body). */
+  request: z.ZodType | "binary" | null;
+  /** Success body (always HTTP 200). Errors use ApiErrorBody. */
   response: z.ZodType;
-  /** Backend module that makes it real (see docs/PROGRESS.md). Until then, use the mock. */
+  /** "live" = implemented (a test checks the route file exports this method); "planned" = use the mock. */
+  status: "live" | "planned";
+  /** Backend module that implements it (docs/PROGRESS.md). */
   module: number;
 };
 
-/**
- * Every JSON API route. Non-JSON route: GET /api/files/[id] serves the original
- * file (PDF/PPTX/MP4) with HTTP Range support (Module 4).
- */
+/** Every JSON API route. */
 export const endpoints = {
-  listSources: { method: "GET", path: "/api/sources", request: null, response: z.array(SourceView), module: 4 },
-  uploadSource: { method: "POST", path: "/api/sources", request: "multipart/form-data, field 'file'", response: UploadResponse, module: 4 },
-  listLearners: { method: "GET", path: "/api/learners", request: null, response: z.array(Learner), module: 4 },
-  createLearner: { method: "POST", path: "/api/learners", request: CreateLearnerRequest, response: Learner, module: 4 },
-  buildCourse: { method: "POST", path: "/api/build", request: BuildRequest, response: BuildResponse, module: 9 },
-  listTopics: { method: "GET", path: "/api/topics", request: null, response: z.array(TopicView), module: 9 },
-  chat: { method: "POST", path: "/api/chat", request: ChatRequest, response: TutorAnswer, module: 10 },
-  chatHistory: { method: "GET", path: "/api/chat?learnerId=", request: null, response: z.array(ChatMessageView), module: 10 },
-  evalAnswer: { method: "POST", path: "/api/eval/answer", request: EvalAnswerRequest, response: EvalAnswerResponse, module: 10 },
-  createQuiz: { method: "POST", path: "/api/quiz", request: CreateQuizRequest, response: Quiz, module: 12 },
-  getQuiz: { method: "GET", path: "/api/quiz/[id]", request: null, response: Quiz, module: 12 },
-  submitQuiz: { method: "POST", path: "/api/quiz/[id]/submit", request: SubmitRequest, response: QuizReport, module: 13 },
-  getReport: { method: "GET", path: "/api/quiz/[id]/report", request: null, response: QuizReport, module: 13 },
-  mastery: { method: "GET", path: "/api/mastery?learnerId=", request: null, response: MasteryView, module: 14 },
+  health: { method: "GET", path: "/api/health", query: HealthQuery, request: null, response: HealthResponse, status: "live", module: 0 },
+  listLearners: { method: "GET", path: "/api/learners", query: null, request: null, response: z.array(Learner), status: "live", module: 4 },
+  createLearner: { method: "POST", path: "/api/learners", query: null, request: CreateLearnerRequest, response: Learner, status: "live", module: 4 },
+  listSources: { method: "GET", path: "/api/sources", query: null, request: null, response: z.array(SourceView), status: "live", module: 4 },
+  uploadSource: { method: "POST", path: "/api/sources", query: UploadQuery, request: "binary", response: UploadResponse, status: "live", module: 4 },
+  deleteSource: { method: "DELETE", path: "/api/sources/[id]", query: null, request: null, response: DeleteSourceResponse, status: "live", module: 4 },
+  buildCourse: { method: "POST", path: "/api/build", query: null, request: BuildRequest, response: BuildResponse, status: "planned", module: 9 },
+  listTopics: { method: "GET", path: "/api/topics", query: null, request: null, response: z.array(TopicView), status: "planned", module: 9 },
+  chat: { method: "POST", path: "/api/chat", query: null, request: ChatRequest, response: TutorAnswer, status: "planned", module: 10 },
+  chatHistory: { method: "GET", path: "/api/chat", query: LearnerQuery, request: null, response: z.array(ChatMessageView), status: "planned", module: 10 },
+  evalAnswer: { method: "POST", path: "/api/eval/answer", query: null, request: EvalAnswerRequest, response: EvalAnswerResponse, status: "planned", module: 10 },
+  createQuiz: { method: "POST", path: "/api/quiz", query: null, request: CreateQuizRequest, response: Quiz, status: "planned", module: 12 },
+  getQuiz: { method: "GET", path: "/api/quiz/[id]", query: null, request: null, response: Quiz, status: "planned", module: 12 },
+  submitQuiz: { method: "POST", path: "/api/quiz/[id]/submit", query: null, request: SubmitRequest, response: QuizReport, status: "planned", module: 13 },
+  getReport: { method: "GET", path: "/api/quiz/[id]/report", query: null, request: null, response: QuizReport, status: "planned", module: 13 },
+  mastery: { method: "GET", path: "/api/mastery", query: LearnerQuery, request: null, response: MasteryView, status: "planned", module: 14 },
 } as const satisfies Record<string, Endpoint>;
+
+/**
+ * Non-JSON routes. GET /api/files/[id] serves the original upload (PDF/PPTX/MP4) with
+ * HTTP Range support (206 Partial Content) so <video> can seek and PDFs open at #page=N.
+ */
+export const NON_JSON_ROUTES = {
+  file: { methods: ["GET", "HEAD"], path: "/api/files/[id]", status: "live", module: 4 },
+} as const;
 
 export type EndpointName = keyof typeof endpoints;
 export type EndpointResponse<K extends EndpointName> = z.infer<(typeof endpoints)[K]["response"]>;

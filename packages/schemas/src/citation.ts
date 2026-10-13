@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ChunkKind, Id } from "./common";
+import { paths } from "./paths";
 
 const CitationBase = z.object({
   chunkId: Id,
@@ -53,7 +54,7 @@ export function formatLocator(c: Citation): string {
 
 /** URL of the original file. PDF opens at the page (#page=N); video seeks via media fragment (#t=S). */
 export function citationHref(c: Citation): string {
-  const base = `/api/files/${encodeURIComponent(c.sourceId)}`;
+  const base = paths.file(c.sourceId);
   switch (c.sourceType) {
     case "PDF":
       return `${base}#page=${c.page}`;

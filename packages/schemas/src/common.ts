@@ -45,6 +45,16 @@ export const ApiErrorCode = z.enum([
 ]);
 export type ApiErrorCode = z.infer<typeof ApiErrorCode>;
 
+/** HTTP status sent with each error code. Every success is 200. */
+export const API_ERROR_STATUS: Record<ApiErrorCode, number> = {
+  bad_request: 400,
+  not_found: 404,
+  not_ready: 409,
+  rate_limited: 429,
+  llm_error: 502,
+  internal: 500,
+};
+
 export const ApiErrorBody = z.object({
   error: z.object({ code: ApiErrorCode, message: z.string() }),
 });

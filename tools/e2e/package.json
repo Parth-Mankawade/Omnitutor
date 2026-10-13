@@ -1,0 +1,19 @@
+{
+  "name": "@sc/e2e",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:e2e": "tsx --test --test-concurrency=1 \"src/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@sc/client": "*",
+    "@sc/core": "*",
+    "@sc/db": "*",
+    "@sc/schemas": "*"
+  },
+  "devDependencies": {
+    "tsx": "4.23.15"
+  }
+}

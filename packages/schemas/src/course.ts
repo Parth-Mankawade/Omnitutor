@@ -3,13 +3,28 @@ import { Count, Id, IsoDate, SourceStatus, SourceType } from "./common";
 
 // ── Sources ──
 
-/** Accepted upload MIME types per source type. */
+/** Canonical MIME type stored and served per source type. */
 export const ACCEPTED_UPLOADS: Record<SourceType, string[]> = {
   PDF: ["application/pdf"],
   PPTX: ["application/vnd.openxmlformats-officedocument.presentationml.presentation"],
   VIDEO: ["video/mp4"],
 };
+/** The file extension decides the type (browser MIME types are unreliable); the server then checks the content. */
+export const ACCEPTED_EXTENSIONS: Record<SourceType, string> = { PDF: ".pdf", PPTX: ".pptx", VIDEO: ".mp4" };
 export const MAX_VIDEO_MINUTES = 20;
+export const MAX_UPLOAD_MB = 500;
+export const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
+
+/** "Lecture 5.PDF" → "PDF"; unsupported or missing extension → null. */
+export function sourceTypeFromFilename(filename: string): SourceType | null {
+  const ext = /\.[^./\\]+$/.exec(filename.trim().toLowerCase())?.[0];
+  const match = (Object.keys(ACCEPTED_EXTENSIONS) as SourceType[]).find((t) => ACCEPTED_EXTENSIONS[t] === ext);
+  return match ?? null;
+}
+
+/** POST /api/sources?filename=…, with the raw file bytes as the body (no multipart). */
+export const UploadQuery = z.object({ filename: z.string().trim().min(1).max(255) });
+export type UploadQuery = z.infer<typeof UploadQuery>;
 
 export const SourceView = z.object({
   id: Id,
@@ -24,9 +39,13 @@ export const SourceView = z.object({
 });
 export type SourceView = z.infer<typeof SourceView>;
 
-/** POST /api/sources (multipart/form-data, field "file") */
+/** POST /api/sources. status is PENDING (stored, waiting for ingestion) or PROCESSING once ingestion starts. */
 export const UploadResponse = z.object({ id: Id, status: SourceStatus });
 export type UploadResponse = z.infer<typeof UploadResponse>;
+
+/** DELETE /api/sources/[id]: removes the source, its chunks and the stored file. 409 while PROCESSING. */
+export const DeleteSourceResponse = z.object({ id: Id });
+export type DeleteSourceResponse = z.infer<typeof DeleteSourceResponse>;
 
 // ── Topics / course build ──
 
@@ -53,3 +72,7 @@ export type Learner = z.infer<typeof Learner>;
 
 export const CreateLearnerRequest = z.object({ name: z.string().trim().min(1).max(60) });
 export type CreateLearnerRequest = z.infer<typeof CreateLearnerRequest>;
+
+/** Query for learner-scoped GETs (?learnerId=…). Unknown learner → 404. */
+export const LearnerQuery = z.object({ learnerId: Id });
+export type LearnerQuery = z.infer<typeof LearnerQuery>;

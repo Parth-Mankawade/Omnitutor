@@ -66,19 +66,29 @@ export type SubmitRequest = z.infer<typeof SubmitRequest>;
 export const Feedback = z.object({ text: z.string().min(1), citations: z.array(Citation) });
 export type Feedback = z.infer<typeof Feedback>;
 
-export const AttemptResult = z.object({
-  questionId: Id,
-  position: Count,
-  topicId: Id,
-  type: QuestionType,
-  stem: z.string(),
-  response: QuizResponse.nullable(), // null = unanswered
-  correct: z.boolean(),
-  score: Probability, // partial credit for SHORT
-  correctAnswer: z.string(), // display form, e.g. "17 ms" or the correct option text
-  feedback: Feedback, // cites the source excerpts the question came from
-  misconception: z.string().nullable(),
-});
+export const AttemptResult = z
+  .object({
+    questionId: Id,
+    position: Count,
+    topicId: Id,
+    type: QuestionType,
+    stem: z.string(),
+    options: z.array(z.string().min(1)).nullable(), // MCQ options (to show the chosen one); null otherwise
+    response: QuizResponse.nullable(), // null = unanswered
+    correct: z.boolean(),
+    score: Probability, // partial credit for SHORT
+    correctAnswer: z.string(), // display form, e.g. "17 ms" or the correct option text
+    feedback: Feedback, // cites the source excerpts the question came from
+    misconception: z.string().nullable(),
+  })
+  .superRefine((a, ctx) => {
+    if ((a.type === "MCQ") !== (a.options !== null)) {
+      ctx.addIssue({ code: "custom", message: "options must be set for MCQ and null otherwise", path: ["options"] });
+    }
+    if (a.response && a.response.type !== a.type) {
+      ctx.addIssue({ code: "custom", message: "response.type must match the question type", path: ["response"] });
+    }
+  });
 export type AttemptResult = z.infer<typeof AttemptResult>;
 
 export const TopicResult = z.object({

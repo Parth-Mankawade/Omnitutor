@@ -7,5 +7,7 @@ export const prisma = globalForPrisma.prisma ?? new PrismaClient();
 
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
 
-// Model types, enums and the Prisma namespace, so consumers only depend on @sc/db.
-export * from "@prisma/client";
+// Explicit re-exports: @prisma/client is CommonJS and external to the Next bundle, so a runtime
+// `export *` can't be analysed (Turbopack warns on every request). Types are erased at compile time.
+export { Prisma } from "@prisma/client";
+export type * from "@prisma/client";

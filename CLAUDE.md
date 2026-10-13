@@ -31,12 +31,22 @@ Model IDs come from env (`LLM_MODEL_FAST`, `LLM_MODEL_STRONG`, `EMBED_MODEL`) �
 - `apps/web` (`@sc/web`): Next.js 16 pages + thin API routes. Started via `scripts/next.mjs`, which loads the root `.env`.
 - `packages/core` (`@sc/core`): all domain logic (llm, ingest/, retrieve, tutor, quiz, bkt). No Next.js imports.
 - `packages/db` (`@sc/db`): Prisma schema/client; `prisma.config.ts` loads the root `.env`.
-- `packages/schemas` (`@sc/schemas`): shared Zod contract.
-- `tools/` (smoke, eval, sim): added in their modules. `docs/`: ARCHITECTURE.md, PROGRESS.md (update PROGRESS after every module).
+- `packages/schemas` (`@sc/schemas`): shared Zod contract, `paths` URL builders, endpoint registry (`endpoints.ts`, with `status: live|planned`), mocks.
+- `packages/client` (`@sc/client`): typed HTTP client on the contract. The UI and tools call the API only through it.
+- `tools/smoke` (Gemini smoke), `tools/e2e` (end-to-end vs running server); `tools/eval`, `tools/sim` come from the teammate.
+- `docs/`: ARCHITECTURE, PROGRESS (update after every module), API_SPEC, INGESTION_SPEC, INTEGRATION_AUDIT (§11 resolution log), TEAMMATE_BRIEF, `postman/` collection.
 - One `.env` at the repo root. Gemini key var is `APP_GEMINI_API_KEY`, passed explicitly to the SDK; never use a machine-wide `GEMINI_API_KEY`.
 - Postgres: docker-compose, host port 5434, user/pass/db `study`.
 - Windows: `npm install` / `npm run db:generate` fail with EPERM while the dev server runs (DLL lock). Stop dev first.
-- `@sc/core`, `@sc/schemas`, `@sc/smoke` are ESM (`"type": "module"`); `@sc/db` is CJS.
+- `@sc/core`, `@sc/schemas`, `@sc/client`, `@sc/smoke`, `@sc/e2e` are ESM (`"type": "module"`); `@sc/db` is CJS and re-exports `Prisma` explicitly plus `export type *` (a runtime `export *` from `@prisma/client` triggers a Turbopack warning on every request).
+
+## Rules for API routes (enforced by tests)
+- A route is thin: wrap it in `handle()`, parse with `readBody` / `readQuery` (from `apps/web/app/api/_lib/http.ts`), call an `@sc/core` service, and return `json(endpoints.<name>.response, data)`. Responses are validated; errors become `ApiErrorBody` with `API_ERROR_STATUS`. Every success is 200.
+- Core services throw `AppError(code, userMessage)` (`badRequest` / `notFound` / `notReady`) and return contract-shaped objects (dates as ISO strings).
+- **When a route lands, set its registry `status: "live"` in the same change.** The schemas test fails if status and route files disagree in either direction, and the client's `auto` mode switches from mock to real based on it.
+- Add the URL builder to `paths.ts` and a mock to `mocks.ts` for every new endpoint (tests require both).
+- File paths: `repoRoot()` / `uploadsDir()` / `resolveSourcePath()` in `@sc/core` (never `process.cwd()`). Runtime-data paths carry `/*turbopackIgnore: true*/`.
+- Testing per module: core unit + DB tests (`npm run test`), e2e against the running server (`npm run test:e2e`), and `npm run build` with 0 warnings. Tests create data tagged `__test__` / `__e2e__` and clean it up.
 - Next 16 has breaking changes. Read `node_modules/next/dist/docs/` before using unfamiliar APIs. Cache Components is on: dynamic route handlers call `await connection()`.
 
 ## Architecture v2
@@ -94,6 +104,8 @@ OS CPU scheduling: 1 NPTEL/OCW lecture (15–20 min), 1 textbook chapter (20–3
 - [x] Module 0: skeleton (Turborepo, Postgres, Prisma, /api/health) — see docs/PROGRESS.md
 - [x] Module 1: Gemini wrapper (`packages/core/src/llm.ts`) + `npm run smoke` — 4/4 pass, video check needs a sample mp4
 - [x] Module 2: Prisma schema (11 tables) + migration `init` + seed + `npm run db:verify` 12/12
-- [x] Module 3: `@sc/schemas` contract (14 endpoints, mocks, 53 tests); teammate brief in docs/TEAMMATE_BRIEF.md
-- [ ] Module 4: upload + `/api/files/[id]` (Range) + learners endpoints — next
+- [x] Module 3: `@sc/schemas` contract + mocks; teammate brief (needs teammate sign-off)
+- [x] Module 3.1: contract v1.1 + `@sc/client` (audit fixes; INTEGRATION_AUDIT §11)
+- [x] Module 4: learners, streamed + validated uploads (raw bytes `?filename=`), sources list/delete, `/api/files/[id]` with Range. 162 unit + 37 e2e (dev and prod), build clean
+- [ ] Next: Gemini rate limiter in `llm.ts` (I-12), then Module 5 PDF ingestion (+ retry endpoint, boot recovery of stale PROCESSING)
 - [ ] Everything else
