@@ -124,6 +124,10 @@ OS CPU scheduling: 1 NPTEL/OCW lecture (15–20 min), 1 textbook chapter (20–3
 - [x] Module 11: BKT (`updateMastery`, `applyObservation`, `difficultyFor`)
 - [x] Module 10: tutor `POST/GET /api/chat`, `POST /api/eval/answer`. Real: off-material refused 86%, false refusals 0/30, correct citations 97%
 - [x] Module 12: quiz `POST /api/quiz`, `GET /api/quiz/[id]` (generate + code checks + blind verify, no repeats, adaptive). Real: 16/16 checks
-- [ ] Next: Module 13 (submit, grading, report), Module 14 (mastery API), Module 15 (eval)
-- Real-data checks (spend quota only when inputs or prompts change; cached otherwise): `npm run stage1:pdf`, `npm run stage1:video`, `npm run stage1:retrieval`, `npm run holdout:retrieval`, `npm run holdout:generalize`, `npm run stage1:pptx`, `npm run stage1:build`, `npm run stage1:tutor`, `npm run stage1:quiz`
+- [x] Module 13: submit + grading (code for MCQ/numeric; batched SHORT grading with answer-echo alignment guard) + report. Real: 12/12
+- [x] Module 14: `GET /api/mastery` (topics, weak topics with revise citations, history, needsDiagnostic). Real: 4/4. All registry endpoints live
+- [x] UI wired to the live API (sources, tutor + citation viewer, quiz, report, dashboard; learner picker)
+- [x] Module 15 basic: `npm run eval:rag` (RAGAS definitions, Gemini judge) + `npm run eval:sim` (simulated students). Results in docs/PROGRESS.md
+- [ ] Next: README (setup, prerequisites, run), demo video, Devpost
+- Real-data checks (spend quota only when inputs or prompts change; cached otherwise): `npm run stage1:pdf`, `npm run stage1:video`, `npm run stage1:retrieval`, `npm run holdout:retrieval`, `npm run holdout:generalize`, `npm run stage1:pptx`, `npm run stage1:build`, `npm run stage1:tutor`, `npm run stage1:quiz`, `npm run stage1:grading`, `npm run stage1:mastery`
 - [ ] Everything else

@@ -1,177 +1,192 @@
 "use client";
+import type { ChatMessageView, Citation, Coverage, MasteryUpdate, TutorBlock } from "@sc/schemas";
+import { useEffect, useRef, useState } from "react";
+import { CitationViewer } from "@/components/citation-viewer";
 import { BookOpenIcon } from "@/components/icons";
-import React, { useState } from "react";
+import { useLearner } from "@/components/learner";
+import { Locator } from "@/components/locator";
+import { api, errorText } from "@/lib/api";
 
-interface Citation {
-  id: string;
-  type: "pdf" | "slide" | "video";
-  content: string;
-  page?: number;
-  slide?: number;
-  timestamp?: number;
-  sourceName: string;
+const COVERAGE: Record<Coverage, { label: string; className: string }> = {
+  SUPPORTED: { label: "Grounded in your material", className: "bg-verified-ground text-verified-ink" },
+  PARTIAL: { label: "Partly covered by your material", className: "bg-pending-ground text-pending-ink" },
+  NOT_COVERED: { label: "Not in your material", className: "bg-proof-ground text-proof-ink" },
+};
+
+type Message = ChatMessageView & { updates?: MasteryUpdate[] };
+
+function Block({ block, onCite, active }: { block: TutorBlock; onCite: (c: Citation) => void; active: Citation | null }) {
+  if (block.origin === "outside") {
+    return (
+      <div className="rounded-2xl border border-dashed border-rule-strong p-3">
+        <p className="mb-1 font-mono text-[10px] uppercase tracking-widest text-graphite">Outside your material · not from your sources</p>
+        <p className="text-sm leading-relaxed text-graphite">{block.text}</p>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-2">
+      <p className="text-sm leading-relaxed text-ink">{block.text}</p>
+      <div className="flex flex-wrap gap-2">
+        {block.citations.map((c) => (
+          <button
+            key={c.chunkId}
+            onClick={() => onCite(c)}
+            title={c.excerpt}
+            className={`rounded border px-2 py-1 transition-colors ${active?.chunkId === c.chunkId ? "border-proof bg-proof-ground" : "border-rule bg-graphite/5 hover:border-proof"}`}
+          >
+            <Locator citation={c} /> <span className="font-mono text-[10px] text-graphite">{c.filename}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }
-
-interface Message {
-  role: "user" | "assistant";
-  content: string;
-  citations: Citation[];
-}
-
-const MOCK_MESSAGES: Message[] = [
-  {
-    role: "assistant",
-    content: "Hello Alex. Based on your current mastery of CPU Scheduling (85%), I recommend we dive into Memory Management. Would you like to start with a summary of Paging or go straight to a practice problem?",
-    citations: [],
-  },
-  {
-    role: "user",
-    content: "Can you explain how Paging works in the context of virtual memory?",
-    citations: [],
-  },
-  {
-    role: "assistant",
-    content: "Paging is a memory management scheme that eliminates the need for contiguous allocation of physical memory. This scheme permits the physical address space of a process to be non-contiguous. The physical memory is broken into fixed-size blocks called frames, and logical memory is broken into blocks of the same size called pages.",
-    citations: [
-      {
-        id: "c1",
-        type: "pdf",
-        content: "Paging allows the physical address space of a process to be non-contiguous. It divides physical memory into fixed-size blocks called frames...",
-        page: 42,
-        sourceName: "OS_Textbook.pdf",
-      },
-      {
-        id: "c2",
-        type: "video",
-        content: "In this segment, we discuss the frame-to-page mapping mechanism which is the core of paging...",
-        timestamp: 432,
-        sourceName: "Lecture_04_Memory.mp4",
-      },
-    ],
-  },
-];
 
 export default function TutorPage() {
-  const [messages, setMessages] = useState<Message[]>(MOCK_MESSAGES);
+  const { learner } = useLearner();
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
-  const [activeCitation, setActiveCitation] = useState<Citation | null>(MOCK_MESSAGES[2].citations[0]);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [active, setActive] = useState<Citation | null>(null);
+  const bottom = useRef<HTMLDivElement>(null);
 
-  const handleSend = () => {
-    if (!input.trim()) return;
-    setMessages([...messages, { role: "user", content: input, citations: [] }]);
+  useEffect(() => {
+    if (!learner) return;
+    setMessages([]);
+    setActive(null);
+    api
+      .chatHistory(learner.id)
+      .then((h) => {
+        setMessages(h);
+        const last = [...h].reverse().find((m) => m.blocks?.some((b) => b.citations.length));
+        setActive(last?.blocks?.flatMap((b) => b.citations)[0] ?? null);
+      })
+      .catch((e) => setError(errorText(e)));
+  }, [learner]);
+
+  // Block body on purpose: newer Chrome returns a Promise from smooth scrollIntoView, and React would call it as a cleanup.
+  useEffect(() => {
+    bottom.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, sending]);
+
+  async function send() {
+    const text = input.trim();
+    if (!text || !learner || sending) return;
     setInput("");
-    // Mock response
-    setTimeout(() => {
-      setMessages(prev => [...prev, {
-        role: "assistant",
-        content: "That's a great follow-up question. Let me find the exact section in your materials...",
-        citations: [],
-      }]);
-    }, 1000);
-  };
+    setError(null);
+    setSending(true);
+    const now = new Date().toISOString();
+    setMessages((m) => [...m, { id: `local-${now}`, role: "USER", content: text, blocks: null, coverage: null, refused: false, createdAt: now }]);
+    try {
+      const a = await api.chat({ learnerId: learner.id, message: text });
+      setMessages((m) => [
+        ...m,
+        { id: a.messageId, role: "ASSISTANT", content: a.blocks.map((b) => b.text).join("\n\n"), blocks: a.blocks, coverage: a.coverage, refused: a.refused, createdAt: new Date().toISOString(), updates: a.masteryUpdates },
+      ]);
+      const first = a.blocks.flatMap((b) => b.citations)[0];
+      if (first) setActive(first);
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setSending(false);
+    }
+  }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-paper">
-      {/* Chat Area (60%) */}
-      <section className="w-full lg:w-[60%] flex flex-col h-full border-r border-rule">
-        <header className="p-6 border-b border-rule flex justify-between items-center bg-surface">
+    <div className="flex h-[calc(100dvh-3.5rem)] overflow-hidden bg-paper">
+      {/* Chat area */}
+      <section className="flex h-full w-full flex-col border-r border-rule lg:w-[60%]">
+        <header className="flex items-center justify-between border-b border-rule bg-surface p-6">
           <div>
-            <h1 className="text-xl font-display font-bold text-ink">Personal Tutor</h1>
-            <p className="text-xs text-graphite font-mono uppercase tracking-widest">Topic: Memory Management</p>
+            <h1 className="font-display text-xl font-bold text-ink">Personal Tutor</h1>
+            <p className="font-mono text-xs uppercase tracking-widest text-graphite">
+              {learner ? `${learner.name} · answers only from your sources` : "Pick a learner"}
+            </p>
           </div>
-          <div className="flex items-center gap-3">
-             <span className="flex items-center gap-2 px-3 py-1 bg-proof/10 text-proof rounded-full text-xs font-bold">
-               <span className="w-2 h-2 bg-proof rounded-full animate-pulse" />
-               Adaptive Mode
-             </span>
-          </div>
+          <span className="flex items-center gap-2 rounded-full bg-proof/10 px-3 py-1 text-xs font-bold text-proof" title="Explanations adapt to your per-topic mastery; what you say updates it.">
+            <span className="h-2 w-2 animate-pulse rounded-full bg-proof" />
+            Adaptive Mode
+          </span>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
-          {messages.map((msg, i) => (
-            <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-              <div className={`max-w-[80%] space-y-3 ${msg.role === "user" ? "text-right" : "text-left"}`}>
-                <div className={`p-4 rounded-2xl ${
-                  msg.role === "user"
-                    ? "bg-proof text-white rounded-tr-none"
-                    : "bg-surface border border-rule text-ink rounded-tl-none shadow-sm"
-                }`}>
+        <div className="flex-1 space-y-6 overflow-y-auto p-6">
+          {messages.length === 0 && !sending && (
+            <p className="mx-auto max-w-md pt-16 text-center text-sm text-graphite">
+              Ask anything about your course material. Answers cite the exact page, slide or timestamp; anything your sources don&apos;t cover is declined or clearly marked.
+            </p>
+          )}
+          {messages.map((msg) =>
+            msg.role === "USER" ? (
+              <div key={msg.id} className="flex justify-end">
+                <div className="max-w-[80%] rounded-2xl rounded-tr-none bg-proof p-4 text-white">
                   <p className="text-sm leading-relaxed">{msg.content}</p>
                 </div>
-                {msg.citations.length > 0 && (
-                  <div className="flex flex-wrap gap-2 justify-end">
-                    {msg.citations.map(cit => (
-                      <button
-                        key={cit.id}
-                        onClick={() => setActiveCitation(cit)}
-                        className="text-[10px] font-mono px-2 py-1 bg-graphite/10 text-graphite rounded hover:bg-proof hover:text-white transition-colors border border-rule"
-                      >
-                        Source: {cit.type} {cit.page || cit.slide || cit.timestamp}
-                      </button>
-                    ))}
-                  </div>
-                )}
               </div>
-            </div>
-          ))}
+            ) : (
+              <div key={msg.id} className="flex justify-start">
+                <div className="max-w-[85%] space-y-3 rounded-2xl rounded-tl-none border border-rule bg-surface p-4 shadow-sm">
+                  {msg.coverage && (
+                    <span className={`inline-block rounded-full px-2.5 py-0.5 text-[11px] font-medium ${COVERAGE[msg.coverage].className}`}>{COVERAGE[msg.coverage].label}</span>
+                  )}
+                  {(msg.blocks ?? [{ origin: "outside", text: msg.content, citations: [] } as TutorBlock]).map((b, i) => (
+                    <Block key={i} block={b} onCite={setActive} active={active} />
+                  ))}
+                  {msg.updates && msg.updates.length > 0 && (
+                    <div className="flex flex-wrap gap-2 border-t border-rule pt-2">
+                      {msg.updates.map((u) => (
+                        <span key={u.topicId} className={`font-mono text-[10px] ${u.after >= u.before ? "text-verified" : "text-proof"}`}>
+                          {u.after >= u.before ? "▲" : "▼"} {u.topicName} {Math.round(u.before * 100)}% → {Math.round(u.after * 100)}%
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ),
+          )}
+          {sending && <p className="text-sm text-graphite">Searching your material…</p>}
+          {error && <p role="alert" className="text-sm text-proof">{error}</p>}
+          <div ref={bottom} />
         </div>
 
-        <footer className="p-6 bg-surface border-t border-rule">
-          <div className="relative max-w-4xl mx-auto">
+        <footer className="border-t border-rule bg-surface p-6">
+          <form
+            className="relative mx-auto max-w-4xl"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void send();
+            }}
+          >
             <input
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSend()}
               placeholder="Ask a question about the material..."
-              className="w-full p-4 pr-16 bg-paper border border-rule rounded-2xl focus:outline-none focus:ring-2 focus:ring-proof/50 transition-all font-body"
+              maxLength={2000}
+              disabled={!learner}
+              className="w-full rounded-2xl border border-rule bg-paper p-4 pr-24 font-body transition-all focus:outline-none focus:ring-2 focus:ring-proof/50"
             />
-            <button
-              onClick={handleSend}
-              className="absolute right-2 top-2 bottom-2 px-4 bg-proof text-white rounded-xl hover:opacity-90 transition-opacity"
-            >
-              <span className="text-sm font-bold">Send</span>
+            <button disabled={sending || !input.trim() || !learner} className="absolute bottom-2 right-2 top-2 rounded-xl bg-proof px-4 text-white transition-opacity hover:opacity-90 disabled:opacity-40">
+              <span className="text-sm font-bold">{sending ? "…" : "Send"}</span>
             </button>
-          </div>
+          </form>
         </footer>
       </section>
 
-      {/* Grounding Panel (40%) */}
-      <aside className="hidden lg:flex w-[40%] flex-col h-full bg-surface">
-        <header className="p-6 border-b border-rule">
-          <h2 className="text-lg font-display font-bold text-ink">Material Grounding</h2>
-          <p className="text-xs text-graphite">Direct excerpts from your course materials</p>
+      {/* Grounding panel */}
+      <aside className="hidden h-full w-[40%] flex-col bg-surface lg:flex">
+        <header className="border-b border-rule p-6">
+          <h2 className="font-display text-lg font-bold text-ink">Material Grounding</h2>
+          <p className="text-xs text-graphite">The cited source, opened at the exact page, slide or timestamp</p>
         </header>
-
         <div className="flex-1 overflow-y-auto p-6">
-          {activeCitation ? (
-            <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
-              <div className="p-6 bg-paper border-l-4 border-proof rounded-r-2xl shadow-sm space-y-4">
-                <div className="flex justify-between items-center">
-                  <span className="text-xs font-mono text-graphite uppercase tracking-widest">
-                    {activeCitation.sourceName}
-                  </span>
-                  <span className="text-xs font-mono text-proof font-bold">
-                    {activeCitation.type === "pdf" && `Page ${activeCitation.page}`}
-                    {activeCitation.type === "slide" && `Slide ${activeCitation.slide}`}
-                    {activeCitation.type === "video" && `Time ${Math.floor((activeCitation.timestamp || 0)/60)}:${(activeCitation.timestamp || 0)%60}`}
-                  </span>
-                </div>
-                <p className="text-sm leading-relaxed text-ink italic">
-                  &ldquo;{activeCitation.content}&rdquo;
-                </p>
-              </div>
-
-              <div className="aspect-video bg-graphite/5 rounded-2xl border border-rule flex items-center justify-center text-graphite text-sm italic overflow-hidden relative group">
-                 {/* Mock Media Viewer */}
-                 <div className="absolute inset-0 flex items-center justify-center bg-workspace/5 group-hover:bg-workspace/10 transition-colors">
-                    <span className="text-xs font-mono text-graphite">Media Preview: {activeCitation.type}</span>
-                 </div>
-              </div>
-            </div>
+          {active ? (
+            <CitationViewer citation={active} />
           ) : (
-            <div className="h-full flex flex-col items-center justify-center text-center space-y-4 p-12">
-              <div className="w-16 h-16 bg-graphite/10 rounded-full flex items-center justify-center text-graphite">
+            <div className="flex h-full flex-col items-center justify-center space-y-4 p-12 text-center">
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-graphite/10 text-graphite">
                 <BookOpenIcon size={28} />
               </div>
               <div>

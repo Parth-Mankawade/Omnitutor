@@ -14,7 +14,11 @@
     "stage1:pptx": "tsx src/realdata-check.ts pptx/decks.json",
     "stage1:build": "tsx src/stage1-build.ts",
     "stage1:tutor": "tsx src/stage1-tutor.ts",
-    "stage1:quiz": "tsx src/stage1-quiz.ts"
+    "stage1:quiz": "tsx src/stage1-quiz.ts",
+    "stage1:grading": "tsx src/stage1-grading.ts",
+    "stage1:mastery": "tsx src/stage1-mastery.ts",
+    "eval:rag": "tsx src/eval-rag.ts",
+    "eval:sim": "tsx src/sim-students.ts"
   },
   "dependencies": {
     "@sc/client": "*",

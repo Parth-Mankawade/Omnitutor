@@ -133,9 +133,9 @@ Examples `[mock]` (`citations` in `mocks.ts`):
 | E11 | POST | `/api/eval/answer` | `paths.evalAnswer()` | ✅ | 10 | `EvalAnswerRequest` | `EvalAnswerResponse` |
 | E12 | POST | `/api/quiz` | `paths.quizzes()` | ✅ | 12 | `CreateQuizRequest` | `Quiz` |
 | E13 | GET | `/api/quiz/[id]` | `paths.quiz(id)` | ✅ | 12 | — | `Quiz` |
-| E14 | POST | `/api/quiz/[id]/submit` | `paths.submitQuiz(id)` | 📄 | 13 (+11) | `SubmitRequest` | `QuizReport` |
-| E15 | GET | `/api/quiz/[id]/report` | `paths.report(id)` | 📄 | 13 | — | `QuizReport` |
-| E16 | GET | `/api/mastery` | `paths.mastery(learnerId)` | 📄 | 14 (+11) | query `LearnerQuery` | `MasteryView` |
+| E14 | POST | `/api/quiz/[id]/submit` | `paths.submitQuiz(id)` | ✅ | 13 (+11) | `SubmitRequest` | `QuizReport` |
+| E15 | GET | `/api/quiz/[id]/report` | `paths.report(id)` | ✅ | 13 | — | `QuizReport` |
+| E16 | GET | `/api/mastery` | `paths.mastery(learnerId)` | ✅ | 14 (+11) | query `LearnerQuery` | `MasteryView` |
 | E18 | POST | `/api/sources/[id]/ingest` | `paths.ingestSource(id)` | ✅ | 5 (PDF), 7 (video) | — | `UploadResponse` (`PROCESSING`) |
 | E20 | POST | `/api/search` | `paths.search()` | ✅ | 8 | `SearchRequest` | `SearchResponse` |
 | E19 | GET | `/api/assessments?learnerId=` (quiz history list) | — | 🔶 | — | — | — |
@@ -420,7 +420,7 @@ Refusal `[mock]` (`mockStates.refusedAnswer`):
 - **Response 200:** `Quiz` (same as E12). Used to reload `/quiz/[id]` after navigation. Questions are only those with `verified = true`, ordered by `position` (proposed).
 - **Errors:** 404. Allowed after submission (Q14).
 
-### E14. `POST /api/quiz/[id]/submit`: 📄 PLANNED (Module 13; BKT needs Module 11)
+### E14. `POST /api/quiz/[id]/submit`: ✅ LIVE (Module 13). 409 if already submitted; 400 for foreign question ids or type mismatches
 - **Body:** `SubmitRequest = { responses: { questionId: Id, response: QuizResponse }[] }`. **Duplicate `questionId`s are rejected.** Unanswered questions may be omitted and are graded as wrong.
 - `QuizResponse` is a discriminated union on `type` and **must match the question's type** (server-side check, not expressible in the schema):
 
@@ -475,11 +475,11 @@ Show the learner's MCQ answer as `options[response.index]` (`options` added in v
 - **Errors (proposed):** 400 (validation, or response type doesn't match the question) · 404 · 409 (already submitted) · 429 / 502 (SHORT grading).
 - **DB:** `Attempt` (insert; unique `(assessmentId, questionId)`), `Mastery` (update), `MasteryEvent` (insert, `attemptId`), `Assessment` (status=SUBMITTED, `report`, `submittedAt`).
 
-### E15. `GET /api/quiz/[id]/report`: 📄 PLANNED (Module 13)
+### E15. `GET /api/quiz/[id]/report`: ✅ LIVE (Module 13). 409 until submitted
 - **Response 200:** `QuizReport` (same as E14, read from `Assessment.report`).
 - **Errors:** 404 · 409 `not_ready` if not yet submitted (proposed).
 
-### E16. `GET /api/mastery?learnerId={id}`: 📄 PLANNED (Module 14; values from Module 11). Build with `paths.mastery(id)`
+### E16. `GET /api/mastery?learnerId={id}`: ✅ LIVE (Module 14). Build with `paths.mastery(id)`
 - **Response 200:** `MasteryView`
 
 | Field | Type | Notes |

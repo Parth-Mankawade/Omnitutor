@@ -61,9 +61,9 @@ Legend: ✅ done & verified · 🟡 in progress / awaiting review · ⬜ not sta
 | 10 | Tutor API + grounding guards (+ `/api/eval/answer`) | cited answer; off-material refused | 🟡 awaiting review | **Real: off-material refused 86%, false refusals 0/30, correct citation 97%**; chat updates mastery. Citation panel UI is teammate Task 3 |
 | 11 | BKT `updateMastery` (unit tested) | known sequences → expected values | ✅ | 6 tests incl. hand-computed values; `updateMastery` exported for the simulator |
 | 12 | Quiz generate + verify + no-repeat | verified questions, no seen stems | 🟡 awaiting review | **Real: 16/16 checks** (diagnostic, mock, adaptivity, no repeats, other course); 2 calls per quiz |
-| 13 | Submit, grading, report API | report with misconceptions + citations | ⬜ | |
-| 14 | Mastery API (`/api/mastery`) | mastery bars, history chart | ⬜ | dashboard UI is teammate Task 7 |
-| 15 | Eval + simulator | metrics table in README | ⬜ | scripts are teammate Tasks 8–10; Parth runs + calibrates `REFUSAL_TAU` |
+| 13 | Submit, grading, report API | report with misconceptions + citations | 🟡 awaiting review | **Real: 12/12 checks** (after fixing a batch-grading misalignment found by the adversarial test) |
+| 14 | Mastery API (`/api/mastery`) | mastery bars, history chart | 🟡 awaiting review | **Real: 4/4 checks**; dashboard UI is teammate Task 7 |
+| 15 | Eval + simulator | metrics table in README | 🟡 basic done | RAGAS-definition metrics: faithfulness 0.97, relevancy 0.84, context precision 0.87, recall 0.93; refusal recall 0.86 / precision 1.00; simulator: adaptive > random, 0% vs 30% repetition |
 | 16 | README, demo video, Devpost | submitted | ⬜ | teammate Task 11 + both |
 
 ## 1b. Teammate track (docs/TEAMMATE_BRIEF.md §5)
@@ -542,6 +542,109 @@ A grep of `packages/*/src` and `apps/web` for file names, page numbers, timestam
 - **Quality notes:**
   - Some NUMERIC questions are shallow (summing burst times) when a topic has no worked computation.
   - One SHORT question asked about the structure of a slide rather than a concept.
+
+### Modules 13–14 — Grading, report, mastery API — 2026-10-14 (REAL Gemini; criteria fixed before each run)
+
+**Module 13** (`packages/core/src/grading.ts`; `POST /api/quiz/[id]/submit`, `GET /api/quiz/[id]/report`).
+- **Grading:**
+  - MCQ / NUMERIC are graded in code against the stored, verified key (numeric within 1%).
+  - SHORT answers are scored by one batched call against reference, key points and sources; pass at ≥ 0.6.
+- **Alignment guard:** items go in as JSON objects, and the grader must echo the first words of the answer it graded. A mismatch is re-graded alone.
+- **Per question:**
+  - feedback citing the question's own sources
+  - the misconception label of the chosen distractor
+  - one BKT update (unanswered = wrong)
+  - an Attempt row
+- **Report:** score, per-topic correct/total + mastery before → after, misconceptions grouped, revisit citations (sources of missed questions, weakest topics first). Resubmit → 409.
+- 3 unit + 1 e2e (no quota).
+
+| Real check (`npm run stage1:grading`) | Run 1 | Run 2 (after fix) |
+|---|---|---|
+| Perfect student: objective 100%, SHORT references pass ≥ 90%, mastery up, every feedback cited | pass | pass (10/10; mastery 0.30 → ~0.96) |
+| Wrong student: objective 0%, wrong SHORT pass ≤ 20%, chosen misconceptions reported, mastery down, revisit = missed sources | **FAIL: 2/4 wrong SHORT answers passed** | pass (0/10; mastery 0.30 → ~0.17) |
+| Empty submission: all wrong, 0 Gemini calls · resubmit 409 · GET report = submit response | pass | pass |
+
+- **Run-1 bug:** the batched grader misaligned answers and questions. It credited an answer about the ready queue for a turnaround-time question, with feedback describing the previous item's answer.
+- **Fix:** structured JSON input + answer-echo check + per-item fallback. In run 2 the echo check never needed the fallback.
+- **Cost:** about 1 request per submission with short answers; 0 without.
+
+**Module 14** (`packages/core/src/mastery.ts`; `GET /api/mastery?learnerId=`).
+- **Per-topic data:** p, band, n and prerequisites.
+- **Weak topics:** assessed and weak, lowest first, with ≤ 3 revise citations (sources of missed questions first).
+- **History:** every quiz/chat mastery event.
+- **`needsDiagnostic`:** stays true until a submitted DIAGNOSTIC.
+- **Real check (`npm run stage1:mastery`): 4/4.**
+  - perfect: no weak topics, p consistent with history
+  - wrong: 5 weak topics lowest-first, revise p.6 / video / p.3–5 / p.9 / p.7–8
+  - chat-only learner: CHAT events
+  - new learner: needsDiagnostic true → false after a diagnostic
+
+- **All endpoints in the registry are now live.**
+
+### UI wiring — 2026-10-14 (teammate's design kept; data layer replaced)
+
+- **Every page reads the live API through `@sc/client`.** The teammate's mock arrays and invented numbers (study streak, milestones, "Alex") are gone.
+- **Header:** learner picker; `?learner=<id>` in any URL selects that learner.
+- **`/sources`:** list (polls while processing), upload by button or drag-and-drop with processing started automatically, retry and delete, build/rebuild topics (Q9 confirm), topics with prerequisites.
+- **`/tutor`:**
+  - real history and grounded chat
+  - blocks labelled *from your material* (citation chips) vs *outside your material*
+  - coverage badge, mastery change per turn
+  - the grounding panel opens the citation at the exact place: PDF `#page=N` iframe, video seeked to tStart, reconstructed slide card
+- **`/quiz`:** Diagnostic / Mock / Custom (topics + count); deep links `?kind=` and `?topics=`; MCQ, numeric and short answer; submit → report.
+- **`/quiz/[id]/report`:** score, per-topic mastery before → after, misconceptions, every question with the correct answer and cited feedback, revisit list, citation viewer.
+- **`/dashboard`:**
+  - topology with band labels and prerequisites
+  - overall mastery and evidence counts
+  - diagnostic banner (cold start)
+  - weak topics with revise links and a Practice quiz
+  - recent activity
+  - mastery-history small multiples (single hue; band shown as text; hover tooltips)
+- **`/`:** the teammate's landing specimens are labelled illustrative; no fake counts.
+- **Bugs found by rendering in headless Chrome (production build):**
+  1. The report route needed `<Suspense>` around `useParams()` (Cache Components prerender error).
+  2. The tutor crashed with "i is not a function": an expression-bodied `useEffect` returned the Promise that newer Chrome's smooth `scrollIntoView` returns, and React called it as a cleanup.
+  3. Dashboard banner text claimed "every topic at the starting estimate" for a learner who already had evidence.
+  All fixed and re-rendered.
+- **Not automated:** click-through flows (uploading a file, sending a chat, answering a quiz) are verified at the API level and by page rendering, not by a scripted browser session.
+
+### Module 15 (basic) — Evaluation — 2026-10-14
+
+**RAG metrics** (`npm run eval:rag`; 51 questions = Stage-1 15 + holdout 36; answers from `POST /api/eval/answer`):
+- RAGAS **definitions** re-implemented with a Gemini judge (`gemini-3.1-flash-lite`), one call per answered question.
+- Not the `ragas` package: its per-metric LLM calls would exceed the free-tier daily quota for this set.
+
+| Metric | All answered (30) | Stage-1 (10) | Holdout (20) |
+|---|---|---|---|
+| Faithfulness (material blocks) | **0.97** | 0.95 | 0.97 |
+| Answer relevancy | **0.84** | 0.86 | 0.83 |
+| Context precision | **0.87** | 0.94 | 0.83 |
+| Context recall | **0.93** | 0.97 | 0.90 |
+| Faithfulness (full answer incl. outside blocks) | 0.92 | | |
+
+- **Computed in code:** citation accuracy **0.97**, refusal recall **0.86** (18/21 off-material), refusal precision **1.00**, false refusals **0/30**.
+- **Caveats:**
+  - The judge is the same model family as the generator.
+  - Single judge; small team-built test set; references written by us.
+  - Partial-coverage exam questions have low recall by construction (h-exam-context-switch, h-exam-doubling-quantum: 0.00).
+
+**Simulated students** (`npm run eval:sim`; no LLM).
+- **Setup:** the real course's 5 topics and prerequisites, a synthetic pool of 30 items (6 per topic, MCQ/SHORT/NUMERIC, difficulty 1–3), 3 sessions × 10 questions, 500 students per profile and policy, paired seeds.
+- **Adaptive policy:** the app's `allocate` + `difficultyFor` + no-repeat rule; mastery estimated with the app's `updateMastery`.
+- **Random policy:** a fresh random draw each session.
+- **The students use a different model:** binary knowledge, learning 0.30 if prerequisites are known else 0.08, slip 0.08 + 0.04 per difficulty step, guess MCQ 0.30 / SHORT 0.05 / NUMERIC 0.02.
+
+| Profile | Gain adaptive | Gain random | MAE s1 → s3 adaptive | MAE s1 → s3 random | Repetition adaptive / random |
+|---|---|---|---|---|---|
+| novice | **74.4%** | 63.7% | 0.314 → **0.184** | 0.325 → 0.217 | **0.0%** / 29.9% |
+| basics only | **48.4%** | 41.5% | 0.239 → **0.104** | 0.267 → 0.141 | **0.0%** / 29.8% |
+| prerequisite gap | 17.2% | 17.2% | 0.167 → **0.039** | 0.236 → 0.049 | **0.0%** / 30.0% |
+| almost there | 17.0% | 16.2% | 0.152 → **0.037** | 0.229 → 0.055 | **0.0%** / 29.5% |
+
+- **Reading:** the adaptive policy learns more where there is more to learn, and the two profiles missing one topic are capped at 20%.
+- **Estimation:** it estimates mastery better in every profile.
+- **Repetition:** it never repeats a question; random repeats about 30%.
+- **Caveat:** synthetic students and items. This evaluates the policy and learner model under stated assumptions, not real learning.
 
 ## 5. Accuracy / eval metrics (filled in Module 15)
 

@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { SourceStatus, TutorBlock } from "@sc/schemas";
 import { LedgerReveal } from "@/components/ledger-reveal";
 import { Locator } from "@/components/locator";
-import { citations, mastery, sources, tutorThread } from "@/lib/fixtures";
+import { citations, sources, tutorThread } from "@/lib/fixtures";
 import { formatDate } from "@/lib/format";
 
 /**
@@ -228,9 +228,9 @@ export default function LandingPage() {
                   data-reveal="item"
                   className="measure mt-5 text-body text-graphite"
                 >
-                  Three sources, one question: why a short burst returns the CPU
-                  before the time quantum runs out. The locator is the part you
-                  can open.
+                  An illustrative example: three sources, one question, why a
+                  short burst returns the CPU before the time quantum runs out.
+                  The locator is the part you can open.
                 </p>
               </div>
             </div>
@@ -314,14 +314,14 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* A colophon, not a footer bar: what the page is set in and what it is
-          currently holding. The counts are read from the fixtures above. */}
+      {/* A colophon, not a footer bar. The specimens above are illustrative (lib/fixtures);
+          the learner's real material lives on /sources, /tutor, /quiz and /dashboard. */}
       <footer className="border-t border-rule px-4 py-8 sm:px-6">
         <div className="mx-auto flex w-full max-w-[68rem] flex-wrap items-baseline gap-x-6 gap-y-2 text-meta text-graphite">
           <p>Set in Fraunces, Instrument Sans and JetBrains Mono.</p>
-          <p className="tabular-nums">
-            {sources.length} sources, {citations.length} indexed citations,{" "}
-            {mastery.topics.length} topics.
+          <p>
+            Examples on this page are illustrative. Your own course lives in{" "}
+            <Link href="/sources" className="text-ink underline-offset-2 hover:underline">Sources</Link>.
           </p>
         </div>
       </footer>

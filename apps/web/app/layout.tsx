@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { LearnerPicker, LearnerProvider } from "@/components/learner";
 import "./globals.css";
 
 /* Three voices, one job each:
@@ -44,6 +45,7 @@ export default function RootLayout({
       className="h-full"
     >
       <body className="flex min-h-full flex-col bg-paper text-ink">
+        <LearnerProvider>
         {PRELOADED_FONTS.map((href) => (
           <link
             key={href}
@@ -83,7 +85,7 @@ export default function RootLayout({
               </span>
             </Link>
 
-            <nav aria-label="Main">
+            <nav aria-label="Main" className="flex items-center gap-3">
               <ul className="flex items-center gap-1 sm:gap-2">
                 {NAV_LINKS.map((link) => (
                   <li key={link.href}>
@@ -96,6 +98,7 @@ export default function RootLayout({
                   </li>
                 ))}
               </ul>
+              <LearnerPicker />
             </nav>
           </div>
         </header>
@@ -103,6 +106,7 @@ export default function RootLayout({
         <div id="content" className="relative z-10 flex flex-1 flex-col">
           {children}
         </div>
+        </LearnerProvider>
       </body>
     </html>
   );

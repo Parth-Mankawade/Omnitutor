@@ -19,7 +19,7 @@ describe(`registry vs ${BASE_URL}`, () => {
     assert.ok(Array.isArray(await api.listSources()));
     assert.ok(Array.isArray(await api.listTopics()));
   });
-  const planned = (Object.keys(endpoints) as EndpointName[]).filter((n) => endpoints[n].status === "planned");
+  const planned = (Object.keys(endpoints) as EndpointName[]).filter((n) => (endpoints[n].status as string) === "planned");
   for (const name of planned) {
     it(`planned ${name} is not served yet (HTML 404 → http_error, not a crash)`, async () => {
       const e = endpoints[name];
@@ -30,8 +30,9 @@ describe(`registry vs ${BASE_URL}`, () => {
   }
   it("client maps a missing route to ApiError(http_error, 404)", async () => {
     const { createApiClient } = await import("@sc/client");
-    const live = createApiClient({ mode: "live", baseUrl: BASE_URL });
-    await assert.rejects(live.mastery("demo-learner"), (e: unknown) => e instanceof ApiError && e.code === "http_error" && e.status === 404);
+    // Every endpoint is live, so point the client at a prefix that serves nothing.
+    const live = createApiClient({ mode: "live", baseUrl: `${BASE_URL}/__no_such_prefix__` });
+    await assert.rejects(live.listLearners(), (e: unknown) => e instanceof ApiError && e.code === "http_error" && e.status === 404);
   });
   it("live routes answer wrong methods with 405", async () => {
     assert.equal((await raw("/api/learners", { method: "DELETE" })).status, 405);

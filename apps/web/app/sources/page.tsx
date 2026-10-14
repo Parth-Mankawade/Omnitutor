@@ -1,103 +1,255 @@
 "use client";
+import { ACCEPTED_EXTENSIONS, type SourceView, type TopicView } from "@sc/schemas";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { SendIcon, TrashIcon } from "@/components/icons";
-import React, { useState } from "react";
+import { ApiError, api, errorText } from "@/lib/api";
+import { formatDate } from "@/lib/format";
 
-interface Source {
-  id: string;
-  name: string;
-  type: "PDF" | "PPTX" | "VIDEO";
-  status: "PROCESSING" | "READY" | "ERROR";
-  uploadDate: string;
-  size: string;
-}
-
-const MOCK_SOURCES: Source[] = [
-  { id: "1", name: "OS_Textbook.pdf", type: "PDF", status: "READY", uploadDate: "2026-10-12", size: "12.4 MB" },
-  { id: "2", name: "Lecture_04_Memory.mp4", type: "VIDEO", status: "READY", uploadDate: "2026-10-12", size: "145 MB" },
-  { id: "3", name: "CPU_Scheduling_Deck.pptx", type: "PPTX", status: "PROCESSING", uploadDate: "2026-10-13", size: "4.1 MB" },
-];
+const ACCEPT = Object.values(ACCEPTED_EXTENSIONS).join(",");
+const STATUS_DOT: Record<SourceView["status"], string> = {
+  READY: "bg-verified",
+  PROCESSING: "bg-pending animate-pulse",
+  PENDING: "bg-graphite/40",
+  FAILED: "bg-proof",
+};
 
 export default function SourcesPage() {
-  const [isUploading, setIsUploading] = useState(false);
+  const [sources, setSources] = useState<SourceView[] | null>(null);
+  const [topics, setTopics] = useState<TopicView[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState<string | null>(null);
+  const [busy, setBusy] = useState<Record<string, boolean>>({});
+  const [dragOver, setDragOver] = useState(false);
+  const [building, setBuilding] = useState(false);
+  const [buildNote, setBuildNote] = useState<string | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
 
-  const handleUpload = () => {
-    setIsUploading(true);
-    setTimeout(() => setIsUploading(false), 2000);
-  };
+  const load = useCallback(async () => {
+    try {
+      const [s, t] = await Promise.all([api.listSources(), api.listTopics()]);
+      setSources(s);
+      setTopics(t);
+      setError(null);
+    } catch (e) {
+      setError(errorText(e));
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  // Poll while anything is being processed (ingestion runs in the background on the server).
+  const processing = sources?.some((s) => s.status === "PROCESSING") ?? false;
+  useEffect(() => {
+    if (!processing) return;
+    const t = setInterval(() => void load(), 2000);
+    return () => clearInterval(t);
+  }, [processing, load]);
+
+  async function upload(files: FileList | File[]) {
+    for (const file of Array.from(files)) {
+      setUploading(file.name);
+      try {
+        const { id } = await api.uploadSource(file);
+        await api.ingestSource(id); // processing starts right away (spends Gemini quota; cached re-runs are free)
+      } catch (e) {
+        setError(`${file.name}: ${errorText(e)}`);
+      }
+    }
+    setUploading(null);
+    await load();
+  }
+
+  async function act(id: string, action: () => Promise<unknown>) {
+    setBusy((b) => ({ ...b, [id]: true }));
+    try {
+      await action();
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setBusy((b) => ({ ...b, [id]: false }));
+      await load();
+    }
+  }
+
+  async function build(force = false) {
+    setBuilding(true);
+    setBuildNote(null);
+    try {
+      const { topics: built } = await api.buildCourse(force ? { force: true } : {});
+      setTopics(built);
+      setBuildNote(`Built ${built.length} topics from your material.`);
+    } catch (e) {
+      if (e instanceof ApiError && e.code === "not_ready" && /progress/i.test(e.message) && window.confirm(`${e.message}\n\nRebuild anyway?`)) {
+        setBuilding(false);
+        return build(true);
+      }
+      setBuildNote(errorText(e));
+    } finally {
+      setBuilding(false);
+    }
+  }
+
+  const ready = sources?.filter((s) => s.status === "READY").length ?? 0;
+  const topicName = new Map(topics.map((t) => [t.id, t.name]));
 
   return (
-    <main className="p-8 max-w-5xl mx-auto w-full space-y-12">
-      <header className="flex justify-between items-end">
+    <main className="mx-auto w-full max-w-5xl space-y-12 p-8">
+      <header className="flex items-end justify-between gap-4">
         <div className="space-y-2">
-          <h1 className="text-4xl font-display font-bold tracking-tight text-ink">Knowledge Base</h1>
-          <p className="text-graphite font-body">Ingest lecture materials to build your personal tutoring model.</p>
+          <h1 className="font-display text-4xl font-bold tracking-tight text-ink">Knowledge Base</h1>
+          <p className="font-body text-graphite">Ingest lecture materials to build your personal tutoring model.</p>
         </div>
         <button
-          onClick={handleUpload}
-          disabled={isUploading}
-          className="px-6 py-3 bg-proof text-white rounded-full font-bold hover:opacity-90 transition-opacity disabled:opacity-50"
+          onClick={() => fileInput.current?.click()}
+          disabled={uploading !== null}
+          className="rounded-full bg-proof px-6 py-3 font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
         >
-          {isUploading ? "Uploading..." : "Add New Source"}
+          {uploading ? "Uploading…" : "Add New Source"}
         </button>
       </header>
 
-      {/* Upload Area */}
-      <div className="p-12 border-2 border-dashed border-rule rounded-[3rem] bg-surface flex flex-col items-center justify-center text-center space-y-4 group hover:border-proof transition-colors cursor-pointer">
-        <div className="w-16 h-16 bg-paper rounded-full flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform">
+      <input ref={fileInput} type="file" accept={ACCEPT} multiple hidden onChange={(e) => e.target.files && void upload(e.target.files)} />
+
+      {/* Upload area */}
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => fileInput.current?.click()}
+        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && fileInput.current?.click()}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragOver(true);
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragOver(false);
+          if (e.dataTransfer.files.length) void upload(e.dataTransfer.files);
+        }}
+        className={`group flex cursor-pointer flex-col items-center justify-center space-y-4 rounded-[3rem] border-2 border-dashed bg-surface p-12 text-center transition-colors ${dragOver ? "border-proof" : "border-rule hover:border-proof"}`}
+      >
+        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-paper shadow-sm transition-transform group-hover:scale-110">
           <SendIcon size={28} />
         </div>
         <div className="space-y-1">
-          <p className="text-lg font-display font-bold text-ink">Drop your materials here</p>
-          <p className="text-sm text-graphite">Supports PDF, PPTX, and MP4 (up to 20 min)</p>
+          <p className="font-display text-lg font-bold text-ink">{uploading ? `Uploading ${uploading}…` : "Drop your materials here"}</p>
+          <p className="text-sm text-graphite">Supports PDF, PPTX, and MP4 (up to 20 min). Processing starts automatically.</p>
         </div>
         <div className="flex gap-2 pt-4">
-          <span className="text-[10px] font-mono px-2 py-1 bg-graphite/10 text-graphite rounded">PDF</span>
-          <span className="text-[10px] font-mono px-2 py-1 bg-graphite/10 text-graphite rounded">PPTX</span>
-          <span className="text-[10px] font-mono px-2 py-1 bg-graphite/10 text-graphite rounded">MP4</span>
-        </div>
-      </div >
-
-      {/* Sources List */}
-      <div className="space-y-6">
-        <h2 className="text-xl font-display font-bold">Ingested Materials</h2>
-        <div className="grid grid-cols-1 gap-4">
-          {MOCK_SOURCES.map((source) => (
-            <div key={source.id} className="p-5 bg-surface border border-rule rounded-2xl flex items-center justify-between hover:border-proof transition-colors group">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-paper border border-rule rounded-xl flex items-center justify-center text-sm font-bold text-graphite">
-                  {source.type}
-                </div>
-                <div className="space-y-1">
-                  <p className="font-medium text-ink group-hover:text-proof transition-colors">{source.name}</p>
-                  <div className="flex items-center gap-3 text-xs text-graphite font-mono">
-                    <span>{source.uploadDate}</span>
-                    <span>•</span>
-                    <span>{source.size}</span>
-                  </div>
-                </div>
-              </div>
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2">
-                  <span className={`w-2 h-2 rounded-full ${
-                    source.status === "READY" ? "bg-green-500" :
-                    source.status === "PROCESSING" ? "bg-yellow-500 animate-pulse" : "bg-red-500"
-                  }`} />
-                  <span className="text-xs font-mono text-graphite uppercase tracking-widest">
-                    {source.status}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  aria-label={`Delete ${source.name}`}
-                  className="p-2 hover:bg-graphite/10 rounded-lg text-graphite hover:text-ink transition-colors"
-                >
-                  <TrashIcon size={16} />
-                </button>
-              </div>
-            </div>
+          {Object.keys(ACCEPTED_EXTENSIONS).map((t) => (
+            <span key={t} className="rounded bg-graphite/10 px-2 py-1 font-mono text-[10px] text-graphite">{t === "VIDEO" ? "MP4" : t}</span>
           ))}
         </div>
-      </div >
+      </div>
+
+      {error && (
+        <p role="alert" className="rounded-2xl border border-proof/30 bg-proof-ground p-4 text-meta text-proof-ink">
+          {error}
+        </p>
+      )}
+
+      {/* Sources list */}
+      <section className="space-y-6">
+        <h2 className="font-display text-xl font-bold">Ingested Materials</h2>
+        {sources === null ? (
+          <p className="text-meta text-graphite">Loading…</p>
+        ) : sources.length === 0 ? (
+          <p className="text-meta text-graphite">No sources yet. Add a PDF, a slide deck or a lecture video.</p>
+        ) : (
+          <div className="grid grid-cols-1 gap-4">
+            {sources.map((source) => (
+              <div key={source.id} className="group flex items-center justify-between gap-4 rounded-2xl border border-rule bg-surface p-5 transition-colors hover:border-proof">
+                <div className="flex min-w-0 items-center gap-4">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-rule bg-paper text-sm font-bold text-graphite">
+                    {source.type === "VIDEO" ? "MP4" : source.type}
+                  </div>
+                  <div className="min-w-0 space-y-1">
+                    <p className="truncate font-medium text-ink transition-colors group-hover:text-proof">{source.filename}</p>
+                    <div className="flex flex-wrap items-center gap-3 font-mono text-xs text-graphite">
+                      <span>{formatDate(source.createdAt)}</span>
+                      <span>•</span>
+                      <span>{source.chunkCount} chunks</span>
+                      {source.status === "PROCESSING" && (
+                        <>
+                          <span>•</span>
+                          <span>step {source.progressDone}/{source.progressTotal}</span>
+                        </>
+                      )}
+                    </div>
+                    {source.status === "FAILED" && source.error && <p className="text-xs text-proof">{source.error}</p>}
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-4">
+                  <div className="flex items-center gap-2">
+                    <span className={`h-2 w-2 rounded-full ${STATUS_DOT[source.status]}`} />
+                    <span className="font-mono text-xs uppercase tracking-widest text-graphite">{source.status}</span>
+                  </div>
+                  {(source.status === "PENDING" || source.status === "FAILED") && (
+                    <button
+                      type="button"
+                      disabled={busy[source.id]}
+                      onClick={() => void act(source.id, () => api.ingestSource(source.id))}
+                      className="rounded-full border border-rule-strong px-3 py-1 text-xs font-medium text-ink hover:border-proof disabled:opacity-50"
+                    >
+                      {source.status === "FAILED" ? "Retry" : "Process"}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    aria-label={`Delete ${source.filename}`}
+                    disabled={busy[source.id] || source.status === "PROCESSING"}
+                    onClick={() => window.confirm(`Delete ${source.filename} and its chunks?`) && void act(source.id, () => api.deleteSource(source.id))}
+                    className="rounded-lg p-2 text-graphite transition-colors hover:bg-graphite/10 hover:text-ink disabled:opacity-30"
+                  >
+                    <TrashIcon size={16} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Course structure */}
+      <section className="space-y-6">
+        <div className="flex items-end justify-between gap-4">
+          <div className="space-y-1">
+            <h2 className="font-display text-xl font-bold">Course Topics</h2>
+            <p className="text-meta text-graphite">Topics and prerequisites built from all ready sources; every chunk is tagged to one topic.</p>
+          </div>
+          <button
+            onClick={() => void build()}
+            disabled={building || ready === 0 || processing}
+            className="rounded-full border border-rule-strong bg-surface px-5 py-2 text-sm font-medium hover:bg-graphite/5 disabled:opacity-40"
+          >
+            {building ? "Building…" : topics.length ? "Rebuild topics" : "Build topics"}
+          </button>
+        </div>
+        {buildNote && <p className="text-meta text-graphite">{buildNote}</p>}
+        {topics.length === 0 ? (
+          <p className="text-meta text-graphite">{ready ? "Not built yet. Build topics once your sources are ready." : "Add and process sources first."}</p>
+        ) : (
+          <ol className="space-y-3">
+            {topics.map((t) => (
+              <li key={t.id} className="rounded-2xl border border-rule bg-surface p-5">
+                <div className="flex items-baseline justify-between gap-4">
+                  <p className="font-medium text-ink">
+                    <span className="locator mr-2 text-graphite">T{t.seq}</span>
+                    {t.name}
+                  </p>
+                  <span className="font-mono text-xs text-graphite">{t.chunkCount} chunks</span>
+                </div>
+                <p className="mt-1 text-meta text-graphite">{t.description}</p>
+                {t.prereqIds.length > 0 && (
+                  <p className="mt-2 text-xs text-graphite">Requires: {t.prereqIds.map((p) => topicName.get(p) ?? p).join(", ")}</p>
+                )}
+              </li>
+            ))}
+          </ol>
+        )}
+      </section>
     </main>
   );
 }

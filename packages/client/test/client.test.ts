@@ -37,12 +37,11 @@ describe("modes", () => {
     assert.deepEqual(await api.mastery("demo-learner"), mocks.mastery);
     assert.equal(f.calls.length, 0);
   });
-  it("auto: live endpoints fetch, planned endpoints return mocks", async () => {
+  it("auto: follows the registry status (live → fetch); every endpoint is live as of Module 14", async () => {
     const f = fakeFetch(() => json(mocks.listSources));
     const api = createApiClient({ mode: "auto", fetch: f.fn });
     for (const name of Object.keys(endpoints) as EndpointName[]) assert.equal(api.isLive(name), endpoints[name].status === "live", name);
-    await api.listSources(); // live
-    await api.mastery("demo-learner"); // planned (Module 14) → mock
+    await api.listSources();
     assert.equal(f.calls.length, 1);
     assert.equal(f.calls[0].url, "/api/sources");
   });

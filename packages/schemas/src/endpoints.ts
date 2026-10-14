@@ -45,9 +45,9 @@ export const endpoints = {
   evalAnswer: { method: "POST", path: "/api/eval/answer", query: null, request: EvalAnswerRequest, response: EvalAnswerResponse, status: "live", module: 10 },
   createQuiz: { method: "POST", path: "/api/quiz", query: null, request: CreateQuizRequest, response: Quiz, status: "live", module: 12 },
   getQuiz: { method: "GET", path: "/api/quiz/[id]", query: null, request: null, response: Quiz, status: "live", module: 12 },
-  submitQuiz: { method: "POST", path: "/api/quiz/[id]/submit", query: null, request: SubmitRequest, response: QuizReport, status: "planned", module: 13 },
-  getReport: { method: "GET", path: "/api/quiz/[id]/report", query: null, request: null, response: QuizReport, status: "planned", module: 13 },
-  mastery: { method: "GET", path: "/api/mastery", query: LearnerQuery, request: null, response: MasteryView, status: "planned", module: 14 },
+  submitQuiz: { method: "POST", path: "/api/quiz/[id]/submit", query: null, request: SubmitRequest, response: QuizReport, status: "live", module: 13 },
+  getReport: { method: "GET", path: "/api/quiz/[id]/report", query: null, request: null, response: QuizReport, status: "live", module: 13 },
+  mastery: { method: "GET", path: "/api/mastery", query: LearnerQuery, request: null, response: MasteryView, status: "live", module: 14 },
 } as const satisfies Record<string, Endpoint>;
 
 /**
