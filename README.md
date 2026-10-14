@@ -39,7 +39,9 @@ Production mode: `npm run build && npm run start -w @sc/web`.
 |---|---|
 | `APP_GEMINI_API_KEY` | one Gemini key |
 | `APP_GEMINI_API_KEYS` | optional: several keys, comma-separated. When one hits its quota, calls move to the next, and the built-in rate limits scale with the number of keys |
-| `LLM_MODEL_FAST` / `LLM_MODEL_STRONG` | generation models. Quizzes are generated with STRONG and verified with FAST, so using two different models makes the check **cross-model** |
+| `LLM_MODEL_FAST` / `LLM_MODEL_STRONG` | generation models (bulk extraction + grading / tutor, quiz generation, video, course build) |
+| `LLM_MODEL_VERIFY` | the **different** model that blindly re-answers every generated quiz question (**cross-model validation**); we use `gemini-3.5-flash-lite` against `gemini-3.1-flash-lite` for generation |
+| `LLM_MODEL_FALLBACK` | optional: used when a model is overloaded or out of quota on every key (default: `LLM_MODEL_FAST`), so a demo never fails on a 503/429 |
 | `EMBED_MODEL` | embedding model (`gemini-embedding-001`, 768 dimensions) |
 | `REFUSAL_TAU` | retrieval similarity floor below which the tutor declines without calling the LLM (we use 0.60) |
 | `COURSE_NAME` | name of the default course; it's given to every prompt as context |
@@ -82,7 +84,7 @@ Browser (Next.js pages) ──@sc/client──► Next.js API routes (Zod-valida
 - **Quiz integrity:**
   - **no repeats:** stem hashes are compared against everything the learner has seen;
   - **topic tagging:** every question must cite excerpts of its own topic;
-  - **blind verification:** MCQ and numeric are answered without the key and compared in code (±1%), and short reference answers are checked against their sources;
+  - **blind cross-model verification:** a *different* model answers each MCQ and numeric question without the key, compared in code (±1%), and checks short reference answers against their sources. In our runs it rejected 6 of 30 mock-exam candidates as not answerable from the sources;
   - **short-answer grading:** includes an alignment check, so a grade always belongs to the right answer.
 
 Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · API contract: [docs/API_SPEC.md](docs/API_SPEC.md) · ingestion: [docs/INGESTION_SPEC.md](docs/INGESTION_SPEC.md) · every test run with its numbers: [docs/PROGRESS.md](docs/PROGRESS.md).
@@ -95,11 +97,11 @@ Test sets:
 
 | Metric | Result |
 |---|---|
-| Faithfulness (claims in cited answer blocks supported by retrieved context) | **0.97** |
+| Faithfulness (claims in cited answer blocks supported by retrieved context) | **0.98** |
 | Answer relevancy | **0.84** |
-| Context precision / recall | **0.87 / 0.93** |
+| Context precision / recall | **0.86 / 0.92** |
 | Citation accuracy (answer cites the expected page/slide/time) | **0.97** |
-| Off-material refusal recall / precision · false refusals | **0.86 / 1.00 · 0 of 30** |
+| Off-material refusal recall / precision · false refusals | **0.90 / 1.00 · 0 of 30** |
 | Retrieval hit@1, holdout (random ranking: 10%) | **95%** |
 | Extraction ground truth: PDF · PPTX (2 real decks) · video | 47/47 · 21/21 + 15/15 · 12/12 facts |
 

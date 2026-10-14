@@ -10,7 +10,7 @@ const at = (min: number) => new Date(Date.parse(T0) + min * 60_000).toISOString(
 
 // ── Shared fixtures (OS CPU scheduling demo course) ──
 
-const topics = [
+const topicRows = [
   { id: "t-proc", seq: 0, name: "Processes & CPU–I/O bursts", description: "Process states and the alternating CPU/I-O burst cycle that scheduling exploits.", prereqIds: [], chunkCount: 14 },
   { id: "t-crit", seq: 1, name: "Scheduling criteria", description: "CPU utilisation, throughput, turnaround, waiting and response time.", prereqIds: ["t-proc"], chunkCount: 11 },
   { id: "t-fcfs", seq: 2, name: "FCFS scheduling", description: "First-come first-served; the convoy effect.", prereqIds: ["t-crit"], chunkCount: 9 },
@@ -30,6 +30,13 @@ export const citations = {
   rrSlide: { ...PPTX, chunkId: "c-pptx-9", kind: "SLIDE", title: "Round Robin: the time quantum", slide: 9, excerpt: "Each process gets a small unit of CPU time (time quantum q), usually 10–100 ms. After q expires, the process is preempted and added to the end of the ready queue." },
   rrVideo: { ...VIDEO, chunkId: "c-video-14", kind: "TRANSCRIPT", title: null, tStart: 754, tEnd: 812.5, excerpt: "If the quantum is very large, round robin degenerates into FCFS. If it is very small, context-switch overhead dominates." },
 } satisfies Record<string, Citation>;
+
+const conceptsOf: Record<string, { label: string; chunkCount: number; citations: Citation[] }[]> = {
+  "t-fcfs": [{ label: "convoy effect", chunkCount: 3, citations: [citations.fcfsText] }, { label: "Gantt chart", chunkCount: 2, citations: [citations.fcfsGantt] }],
+  "t-sjf": [{ label: "shortest next CPU burst", chunkCount: 4, citations: [citations.sjfText] }],
+  "t-rr": [{ label: "time quantum", chunkCount: 5, citations: [citations.rrSlide] }],
+};
+const topics = topicRows.map((t) => ({ ...t, concepts: conceptsOf[t.id] ?? [] }));
 
 const tutorAnswer = {
   messageId: "msg-2",

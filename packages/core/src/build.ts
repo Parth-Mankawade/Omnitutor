@@ -10,7 +10,7 @@ import { sha256 } from "./cache";
 import { requireCourse } from "./course";
 import { notReady } from "./errors";
 import { embed as geminiEmbed, generateJson, type EmbedTask, type Usage } from "./llm";
-import { cosine } from "./retrieve";
+import { cosine, toCitation } from "./retrieve";
 
 /** Bump when the schema or the outline format changes. (Prompt text changes miss the cache automatically: its hash is in the key.) */
 export const BUILD_PROMPT_VERSION = "build-v1";
@@ -135,7 +135,41 @@ export type BuildReport = { chunks: number; droppedPrereqs: number; emptyTopics:
 export async function listTopics(courseId?: string): Promise<TopicView[]> {
   const id = await requireCourse(courseId);
   const topics = await prisma.topic.findMany({ where: { courseId: id }, orderBy: { seq: "asc" }, include: { _count: { select: { chunks: true } } } });
-  return topics.map((t) => ({ id: t.id, seq: t.seq, name: t.name, description: t.description, prereqIds: t.prereqIds, chunkCount: t._count.chunks }));
+  const chunks = await prisma.chunk.findMany({
+    where: { topicId: { in: topics.map((t) => t.id) }, source: { status: "READY" } },
+    orderBy: [{ sourceId: "asc" }, { seq: "asc" }],
+    include: { source: { select: { type: true, filename: true } } },
+  });
+  return topics.map((t) => ({
+    id: t.id, seq: t.seq, name: t.name, description: t.description, prereqIds: t.prereqIds, chunkCount: t._count.chunks,
+    concepts: topicConcepts(chunks.filter((c) => c.topicId === t.id)).map((c) => ({
+      label: c.label,
+      chunkCount: c.chunks.length,
+      citations: c.chunks.slice(0, MAX_CONCEPT_CITATIONS).map((x) => toCitation({ ...x, chunkId: x.id, sourceType: x.source.type, filename: x.source.filename })),
+    })),
+  }));
+}
+
+export const MAX_CONCEPTS = 8;
+export const MAX_CONCEPT_CITATIONS = 2;
+
+/**
+ * Pure: a topic's concepts (subtopics) from its chunks' ingestion concept labels. Labels are merged
+ * by `conceptKey`; a concept taught by more chunks ranks first (ties → first seen).
+ * Each keeps its chunks in input order, so its first citations are where it is introduced.
+ */
+export function topicConcepts<C extends { conceptLabels: string[] }>(chunks: C[], max = MAX_CONCEPTS): { label: string; chunks: C[] }[] {
+  const groups = new Map<string, { label: string; chunks: C[]; first: number }>();
+  chunks.forEach((c, i) => {
+    for (const raw of new Set(c.conceptLabels.map((l) => l.trim()).filter(Boolean))) {
+      const key = conceptKey(raw);
+      if (!key) continue;
+      const g = groups.get(key) ?? { label: raw, chunks: [], first: i };
+      if (!g.chunks.includes(c)) g.chunks.push(c);
+      groups.set(key, g);
+    }
+  });
+  return [...groups.values()].sort((a, b) => b.chunks.length - a.chunks.length || a.first - b.first).slice(0, max).map(({ label, chunks }) => ({ label, chunks }));
 }
 
 export async function buildCourse(input: { courseId?: string; force?: boolean } = {}, deps: BuildDeps = {}): Promise<{ topics: TopicView[]; report: BuildReport }> {
@@ -198,4 +232,14 @@ export async function buildCourse(input: { courseId?: string; force?: boolean } 
   };
   console.info(`[build] ${courseId}: ${result.length} topics from ${chunks.length} chunks · ${droppedPrereqs} prerequisite links dropped · ${plan.cached ? "cached" : `${plan.usage.inputTokens} input tokens`}`);
   return { topics: result, report };
+}
+
+/** Pure: merge key for a concept label: case, punctuation, spacing and simple English plurals ignored. */
+export function conceptKey(label: string): string {
+  return label
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean)
+    .map((w) => (w.length > 4 && w.endsWith("sses") ? w.slice(0, -2) : w.length > 3 && w.endsWith("s") && !w.endsWith("ss") ? w.slice(0, -1) : w))
+    .join("");
 }

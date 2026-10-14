@@ -6,7 +6,8 @@ import { readCache, writeCache } from "./cache";
 import { LlmError } from "./errors";
 import { limiter, type LimitKind } from "./limiter";
 
-export type ModelRole = "fast" | "strong";
+/** fast: bulk extraction + grading · strong: tutor, generation, video, course build · verify: blind quiz check (a DIFFERENT model = cross-model validation). */
+export type ModelRole = "fast" | "strong" | "verify";
 export type Usage = { inputTokens: number; outputTokens: number };
 
 export const EMBED_DIM = 768;
@@ -42,13 +43,14 @@ function rotateKey(): boolean {
   return true;
 }
 
-function envModel(name: "LLM_MODEL_FAST" | "LLM_MODEL_STRONG" | "EMBED_MODEL"): string {
+function envModel(name: "LLM_MODEL_FAST" | "LLM_MODEL_STRONG" | "LLM_MODEL_VERIFY" | "EMBED_MODEL"): string {
   const id = process.env[name];
   if (!id) throw new LlmError("config", `${name} is not set in .env`);
   return id;
 }
 
 export function modelFor(role: ModelRole): string {
+  if (role === "verify") return process.env.LLM_MODEL_VERIFY?.trim() || envModel("LLM_MODEL_FAST");
   return envModel(role === "fast" ? "LLM_MODEL_FAST" : "LLM_MODEL_STRONG");
 }
 
@@ -116,8 +118,11 @@ async function limited<T>(
       }
       // Transient server/network failure (5xx, "overloaded", fetch failed): one retry.
       const status = e instanceof ApiError ? e.status : undefined;
-      if (err.kind === "api" && attempt < 2 && (status === undefined || status >= 500)) {
-        await sleep(2_000);
+      // 503 "high demand" spikes get more patience (and the other key) than other 5xx.
+      const maxAttempts = status === 503 ? 3 : 2;
+      if (err.kind === "api" && attempt < maxAttempts && (status === undefined || status >= 500)) {
+        if (status === 503) rotateKey();
+        await sleep(attempt === 1 ? 2_000 : 5_000);
         continue;
       }
       throw err;
@@ -157,7 +162,25 @@ export async function generateJson<S extends z.ZodType>(opts: {
   /** Override the input-token estimate (required for long videos). */
   estimatedInputTokens?: number;
 }): Promise<{ data: z.infer<S>; usage: Usage; cached: boolean }> {
-  const model = modelFor(opts.role);
+  const primary = modelFor(opts.role);
+  try {
+    return await generateWith(primary, opts);
+  } catch (e) {
+    // The model is overloaded (5xx) or out of quota/unavailable on every key (429/404) after retries:
+    // answer with the fallback model rather than fail. The limiter's own stops are never bypassed.
+    const fallback = process.env.LLM_MODEL_FALLBACK?.trim() || process.env.LLM_MODEL_FAST?.trim();
+    const status = e instanceof LlmError && e.cause instanceof ApiError ? e.cause.status : undefined;
+    const retryable = status !== undefined && (status >= 500 || status === 429 || status === 404);
+    if (!fallback || fallback === primary || !retryable) throw e;
+    console.warn(`[llm] ${primary} unavailable (HTTP ${status}); using fallback ${fallback}`);
+    return generateWith(fallback, opts);
+  }
+}
+
+async function generateWith<S extends z.ZodType>(
+  model: string,
+  opts: { schema: S; parts: Part[]; system?: string; temperature?: number; cacheKey?: string; estimatedInputTokens?: number },
+): Promise<{ data: z.infer<S>; usage: Usage; cached: boolean }> {
   const responseJsonSchema = geminiJsonSchema(opts.schema);
   const fullKey = opts.cacheKey && generateCacheKey(model, opts.schema, opts.cacheKey);
   if (fullKey) {
@@ -305,6 +328,7 @@ export async function checkModels(): Promise<Record<string, { ok: boolean; error
   const ids = {
     LLM_MODEL_FAST: process.env.LLM_MODEL_FAST,
     LLM_MODEL_STRONG: process.env.LLM_MODEL_STRONG,
+    ...(process.env.LLM_MODEL_VERIFY && { LLM_MODEL_VERIFY: process.env.LLM_MODEL_VERIFY }),
     EMBED_MODEL: process.env.EMBED_MODEL,
   };
   const result: Record<string, { ok: boolean; error?: string }> = {};

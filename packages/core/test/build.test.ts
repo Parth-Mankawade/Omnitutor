@@ -6,7 +6,7 @@ import { after, before, describe, it } from "node:test";
 import { prisma } from "@sc/db";
 import { AppError } from "../src/errors";
 import {
-  buildCourse, listTopics, materialOutline, nearestTopic, orderTopics,
+  buildCourse, listTopics, materialOutline, nearestTopic, orderTopics, topicConcepts, conceptKey,
   type BuildDeps, type OutlineChunk, type TopicPlan,
 } from "../src/build";
 
@@ -56,6 +56,21 @@ describe("pure helpers", () => {
 
   it("nearestTopic picks the highest cosine; ties go to the earlier topic", () => {
     assert.deepEqual(nearestTopic([axis(1), axis(0), [1, 1, ...Array(DIM - 2).fill(0)]], [axis(0), axis(1)]), [1, 0, 0]);
+  });
+
+  it("topicConcepts merges labels case/punctuation-insensitively, ranks by chunk count, keeps chunk order", () => {
+    const a = { id: "a", conceptLabels: ["Slow start", "cwnd"] };
+    const b = { id: "b", conceptLabels: ["slow-start", " ", "Slow start"] };
+    const c = { id: "c", conceptLabels: ["AIMD", "cwnd"] };
+    const out = topicConcepts([a, b, c]).map((g) => [g.label, g.chunks.map((x) => x.id)]);
+    assert.deepEqual(out, [["Slow start", ["a", "b"]], ["cwnd", ["a", "c"]], ["AIMD", ["c"]]]);
+    assert.equal(topicConcepts([a, b, c], 1).length, 1);
+    assert.deepEqual(topicConcepts([{ conceptLabels: [] }]), []);
+    assert.equal(conceptKey("Turn Around time"), conceptKey("Turnaround times"));
+    assert.equal(conceptKey("I/O bound processes"), conceptKey("I/O-bound process"));
+    assert.equal(conceptKey("CPU bursts"), conceptKey("cpu burst"));
+    assert.notEqual(conceptKey("Throughput"), conceptKey("Turnaround time"));
+    assert.equal(conceptKey("Access"), "access");
   });
 
   it("materialOutline: one line per chunk, grouped by source, locators per type, title or excerpt, concepts", () => {

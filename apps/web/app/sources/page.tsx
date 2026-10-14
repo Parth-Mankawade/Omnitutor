@@ -2,6 +2,7 @@
 import { ACCEPTED_EXTENSIONS, type SourceView, type TopicView } from "@sc/schemas";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { SendIcon, TrashIcon } from "@/components/icons";
+import { Locator } from "@/components/locator";
 import { ApiError, api, errorText } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 
@@ -244,6 +245,16 @@ export default function SourcesPage() {
                 <p className="mt-1 text-meta text-graphite">{t.description}</p>
                 {t.prereqIds.length > 0 && (
                   <p className="mt-2 text-xs text-graphite">Requires: {t.prereqIds.map((p) => topicName.get(p) ?? p).join(", ")}</p>
+                )}
+                {t.concepts.length > 0 && (
+                  <ul className="mt-3 flex flex-wrap gap-2" aria-label="Concepts in this topic">
+                    {t.concepts.map((c) => (
+                      <li key={c.label} className="rounded-full border border-rule px-3 py-1 text-xs text-ink" title={`${c.chunkCount} excerpt${c.chunkCount === 1 ? "" : "s"}`}>
+                        {c.label}
+                        {c.citations[0] && <span className="ml-2 text-graphite"><Locator citation={c.citations[0]} /></span>}
+                      </li>
+                    ))}
+                  </ul>
                 )}
               </li>
             ))}

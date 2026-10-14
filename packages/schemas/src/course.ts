@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { Citation } from "./citation";
 import { Count, Id, IsoDate, SourceStatus, SourceType } from "./common";
 
 // ── Sources ──
@@ -52,6 +53,14 @@ export type DeleteSourceResponse = z.infer<typeof DeleteSourceResponse>;
 
 // ── Topics / course build ──
 
+/** A concept (subtopic) inside a topic: aggregated from the concept labels ingestion gave its chunks, with where it is taught. */
+export const TopicConcept = z.object({
+  label: z.string().min(1),
+  chunkCount: Count,
+  citations: z.array(Citation).max(2),
+});
+export type TopicConcept = z.infer<typeof TopicConcept>;
+
 export const TopicView = z.object({
   id: Id,
   seq: Count, // display order, roughly prerequisite order
@@ -59,6 +68,7 @@ export const TopicView = z.object({
   description: z.string(),
   prereqIds: z.array(Id),
   chunkCount: Count,
+  concepts: z.array(TopicConcept).max(8), // most-taught first
 });
 export type TopicView = z.infer<typeof TopicView>;
 

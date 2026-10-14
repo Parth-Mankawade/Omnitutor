@@ -250,7 +250,7 @@ export async function createQuizWithReport(req: CreateQuizRequest): Promise<{ qu
         `Excerpts:\n${q.sources.map((r) => `[${r}] ${excerpts.get(r)!.text}`).join("\n\n")}`,
       ].join("\n"))
       .join("\n\n");
-    const v = await generateJson({ role: "fast", schema: VerifierAnswers, system: verifyPrompt(), parts: [{ text: vInput }], temperature: 0 });
+    const v = await generateJson({ role: "verify", schema: VerifierAnswers, system: verifyPrompt(), parts: [{ text: vInput }], temperature: 0 });
     verifyUsage = v.usage;
     for (const a of v.data.answers) agreed.set(a.id.trim(), a);
   }
