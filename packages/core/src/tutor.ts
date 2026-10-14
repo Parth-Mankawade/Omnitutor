@@ -16,6 +16,7 @@ import { requireCourse } from "./course";
 import { requireLearner } from "./learners";
 import { generateJson } from "./llm";
 import { retrieve, toCitation, type RetrievedChunk } from "./retrieve";
+import { stripExcerptRefs } from "./text";
 
 export const TUTOR_PROMPT_VERSION = "tutor-v1";
 /** Retrieved excerpts given to the model. */
@@ -105,7 +106,7 @@ export function groundAnswer(raw: TutorModelOutput, citations: Citation[], refus
   let relabelled = 0;
   const blocks: TutorBlock[] = [];
   for (const b of raw.blocks) {
-    const text = b.text.trim();
+    const text = stripExcerptRefs(b.text.trim()); // ids belong in citations, never in the text
     if (!text) continue;
     if (b.origin === "outside") {
       blocks.push({ origin: "outside", text, citations: [] });
