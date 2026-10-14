@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { Citation } from "./citation";
 import { Coverage } from "./common";
+import { TutorBlock } from "./tutor";
 
 /** POST /api/eval/answer: tutor answer without a learner (no history, no mastery update). */
 export const EvalAnswerRequest = z.object({ question: z.string().trim().min(1) });
@@ -8,6 +9,7 @@ export type EvalAnswerRequest = z.infer<typeof EvalAnswerRequest>;
 
 export const EvalAnswerResponse = z.object({
   answer: z.string(), // all block texts joined
+  blocks: z.array(TutorBlock), // the same answer with origin labels: faithfulness applies to material blocks
   contexts: z.array(z.string()), // retrieved chunk texts, for RAGAS
   citations: z.array(Citation),
   refused: z.boolean(),

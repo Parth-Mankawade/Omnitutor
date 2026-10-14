@@ -14,6 +14,7 @@ export function errorResponse(code: ApiErrorCode, message: string): Response {
 export function toErrorResponse(e: unknown): Response {
   if (e instanceof AppError) return errorResponse(e.code, e.message);
   if (e instanceof LlmError) {
+    console.error(`[api] Gemini error (${e.kind}): ${e.message}`); // otherwise only "502" reaches the server log
     return errorResponse(e.kind === "rate_limit" ? "rate_limited" : e.kind === "config" ? "internal" : "llm_error", e.message);
   }
   if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2025") return errorResponse("not_found", "Record not found.");

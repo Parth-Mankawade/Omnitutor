@@ -12,3 +12,6 @@ export * from "./sources";
 export * from "./ingest/index";
 export * from "./retrieve";
 export * from "./build";
+export * from "./bkt";
+export * from "./tutor";
+export * from "./quiz";

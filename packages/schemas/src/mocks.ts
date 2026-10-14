@@ -150,6 +150,7 @@ export const mocks = {
   ],
   evalAnswer: {
     answer: tutorAnswer.blocks.map((b) => b.text).join(" "),
+    blocks: tutorAnswer.blocks,
     contexts: [citations.rrSlide.excerpt, citations.rrVideo.excerpt],
     citations: [citations.rrSlide, citations.rrVideo],
     refused: false,

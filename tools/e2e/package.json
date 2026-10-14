@@ -12,7 +12,9 @@
     "holdout:retrieval": "tsx src/stage1-retrieval.ts data/demo/testset.holdout.json",
     "holdout:generalize": "tsx src/realdata-check.ts holdout/generalization.json",
     "stage1:pptx": "tsx src/realdata-check.ts pptx/decks.json",
-    "stage1:build": "tsx src/stage1-build.ts"
+    "stage1:build": "tsx src/stage1-build.ts",
+    "stage1:tutor": "tsx src/stage1-tutor.ts",
+    "stage1:quiz": "tsx src/stage1-quiz.ts"
   },
   "dependencies": {
     "@sc/client": "*",

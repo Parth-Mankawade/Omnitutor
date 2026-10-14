@@ -58,9 +58,9 @@ Legend: ✅ done & verified · 🟡 in progress / awaiting review · ⬜ not sta
 | 7 | Video ingestion (≤60 s windows via Files API `videoMetadata`) | timestamped segments | 🟡 awaiting review | **Real video: 12/12 facts at the true time, mean start error 0.3 s, coverage 100%, re-run free.** Transcript accuracy NOT verified |
 | 8 | Retrieval + `POST /api/search` | top-6 includes the right chunk | 🟡 awaiting review | **Real test set: hit@1 90%, hit@3/6 100%, MRR 0.95** (10 answerable questions, PDF + video). **Holdout (20 answerable): hit@1 95%, MRR 0.97**; weak on code pages |
 | 9 | Course build + `/api/build`, `/api/topics` | 5–8 sensible topics, chunks tagged | 🟡 awaiting review | **Real: VM deck 18/18 pre-registered checks; demo-course 19/21** (preemption not named in any topic; tagging 79% vs 80% threshold). Rebuild free (cache); Q9 409 unless force |
-| 10 | Tutor API + grounding guards (+ `/api/eval/answer`) | cited answer; off-material refused | ⬜ | citation panel UI is teammate Task 3 |
-| 11 | BKT `updateMastery` (unit tested) | known sequences → expected values | ⬜ | signature promised to teammate |
-| 12 | Quiz generate + verify + no-repeat | verified questions, no seen stems | ⬜ | |
+| 10 | Tutor API + grounding guards (+ `/api/eval/answer`) | cited answer; off-material refused | 🟡 awaiting review | **Real: off-material refused 86%, false refusals 0/30, correct citation 97%**; chat updates mastery. Citation panel UI is teammate Task 3 |
+| 11 | BKT `updateMastery` (unit tested) | known sequences → expected values | ✅ | 6 tests incl. hand-computed values; `updateMastery` exported for the simulator |
+| 12 | Quiz generate + verify + no-repeat | verified questions, no seen stems | 🟡 awaiting review | **Real: 16/16 checks** (diagnostic, mock, adaptivity, no repeats, other course); 2 calls per quiz |
 | 13 | Submit, grading, report API | report with misconceptions + citations | ⬜ | |
 | 14 | Mastery API (`/api/mastery`) | mastery bars, history chart | ⬜ | dashboard UI is teammate Task 7 |
 | 15 | Eval + simulator | metrics table in README | ⬜ | scripts are teammate Tasks 8–10; Parth runs + calibrates `REFUSAL_TAU` |
@@ -482,6 +482,66 @@ A grep of `packages/*/src` and `apps/web` for file names, page numbers, timestam
 - 8 unit/DB tests with a fake planner (pure helpers; tagging; rebuild; Q9 409 + force cascade; unknown/empty course).
 - 2 e2e tests (validation 400, unknown/empty course 409, no quota spent).
 - Contract: build + topics are live; `listTopics` takes `?courseId`.
+
+### Modules 10–12 — Tutor, BKT, Quiz — 2026-10-14 (REAL Gemini; criteria fixed before each run)
+
+**Module 11: BKT** (`packages/core/src/bkt.ts`).
+- `updateMastery(p, correct, type, weight?)`: standard BKT.
+  - Prior 0.3, learn 0.15, slip 0.1.
+  - Guess MCQ 0.25 / SHORT 0.1 / NUMERIC 0.05.
+  - Chat evidence is weighted 0.3.
+- `applyObservation` updates `Mastery` and writes a `MasteryEvent` (before/after, source, cause) in one transaction.
+- `difficultyFor(p)`: weak → 1, developing → 2, strong → 3.
+- 6 tests: hand-computed values, damping, monotone/bounded, DB trail.
+
+**Module 10: Tutor** (`packages/core/src/tutor.ts`; `POST /api/chat`, `GET /api/chat`, `POST /api/eval/answer`).
+- **Pipeline:**
+  - retrieve top 6
+  - below `REFUSAL_TAU` → refuse (`off_material`) with no LLM call
+  - learner mastery and weak prerequisites go into the prompt
+  - one structured call returns coverage, blocks (`material` cite excerpt ids / `outside`) and learner evidence
+- **Server guards:** unretrieved citations dropped; uncited material → `outside`; `NOT_COVERED` or no material left → refused (`not_covered`), with the refusal listing the course's topics.
+- **Chat evidence:** damped BKT update.
+- **Eval endpoint:** the same pipeline with no learner and no writes, cached; it returns labelled blocks + contexts for RAGAS.
+- 8 guard tests + 2 e2e (no quota).
+
+| Real check (`npm run stage1:tutor`, 51 test-set questions + a live 4-turn chat) | Target | Result |
+|---|---|---|
+| Off-material refused | ≥ 80% | **18/21 = 86%** (unrelated 5/5, same course 8/8, near-miss 5/8) |
+| Answerable wrongly refused | ≤ 20% | **0/30** |
+| Answered questions citing an expected location | ≥ 80% | **29/30 = 97%** |
+| Chat: misconception lowers mastery, correct statement raises it, off-material refused, history stored | all | **all pass** (0.300 → 0.267 → 0.427) |
+| Cost | — | 53 generate requests (70K tokens) |
+
+- **Near-miss answers:** the 3 near-miss questions answered PARTIAL (SJF order, priority, SRTF). Each says what the material lacks. The SJF naming sits in an `outside` block.
+- **Faithfulness issue:** one `material` block slightly over-reaches beyond its citation (p.7 defines waiting time; the block adds "prioritize short bursts"). RAGAS faithfulness will quantify this kind of issue.
+
+**Module 12: Quiz** (`packages/core/src/quiz.ts`; `POST /api/quiz`, `GET /api/quiz/[id]`).
+- **Plan:** diagnostic = 1 per topic; mock = 10; quiz = chosen topics. Allocation by (1 − mastery); difficulty by band; type mix MCQ/SHORT/NUMERIC.
+- **Generation:** one call, +50% candidates, using each topic's own excerpts plus the stems already seen. Distractors carry misconception labels.
+- **Code checks:**
+  - shape and answer index
+  - citations must be real excerpts **of the question's own topic**
+  - stem hash not seen before (no repeats)
+- **Blind verification:** one call. MCQ/NUMERIC are answered without the key (numeric within 1%, compared in code); SHORT reference answers are checked against their sources.
+- **Storage:** rejected questions are stored unattached.
+- 11 unit + 1 e2e (no quota).
+
+| Real check (`npm run stage1:quiz`) | Result |
+|---|---|
+| Diagnostic, new learner | 5/5 topics, 1 each |
+| Mock | 10 questions; second mock shares **0** stems with earlier quizzes |
+| Types | MCQ, SHORT, NUMERIC all generated |
+| Adaptivity (topic at p 0.99 vs 0.20) | weak topic 5 questions at difficulty 1, strong topic 1 at difficulty 3 |
+| Other course (VM deck) | diagnostic 6/6 topics |
+| Answer leak in `GET /api/quiz/[id]` | none |
+| Run 1 → fix | FAIL: 2 questions cited another topic's excerpt → fixed (own-topic citations only); run 2: **16/16** |
+| Cost per quiz | 2 generate requests (~3.7K input tokens) |
+
+- **Manual review of answer keys:** VM bit-vector and Belady keys checked against slides 30 and 16 (correct); Round Robin 7.75 correct.
+- **Quality notes:**
+  - Some NUMERIC questions are shallow (summing burst times) when a topic has no worked computation.
+  - One SHORT question asked about the structure of a slide rather than a concept.
 
 ## 5. Accuracy / eval metrics (filled in Module 15)
 

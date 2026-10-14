@@ -128,11 +128,11 @@ Examples `[mock]` (`citations` in `mocks.ts`):
 | E6 | GET, HEAD | `/api/files/[id]` | `paths.file(id)` / `citationHref(c)` | ✅ | 4 | `Range` header | file bytes (200 / 206 / 416) |
 | E7 | POST | `/api/build` | `paths.build()` | ✅ | 9 | `BuildRequest` | `BuildResponse` |
 | E8 | GET | `/api/topics` | `paths.topics(courseId?)` | ✅ | 9 | query `CourseQuery` | `TopicView[]` |
-| E9 | POST | `/api/chat` | `paths.chat()` | 📄 | 10 (+11) | `ChatRequest` | `TutorAnswer` |
-| E10 | GET | `/api/chat` | `paths.chatHistory(learnerId)` | 📄 | 10 | query `LearnerQuery` | `ChatMessageView[]` |
-| E11 | POST | `/api/eval/answer` | `paths.evalAnswer()` | 📄 | 10 | `EvalAnswerRequest` | `EvalAnswerResponse` |
-| E12 | POST | `/api/quiz` | `paths.quizzes()` | 📄 | 12 | `CreateQuizRequest` | `Quiz` |
-| E13 | GET | `/api/quiz/[id]` | `paths.quiz(id)` | 📄 | 12 | — | `Quiz` |
+| E9 | POST | `/api/chat` | `paths.chat()` | ✅ | 10 (+11) | `ChatRequest` | `TutorAnswer` |
+| E10 | GET | `/api/chat` | `paths.chatHistory(learnerId)` | ✅ | 10 | query `LearnerQuery` | `ChatMessageView[]` |
+| E11 | POST | `/api/eval/answer` | `paths.evalAnswer()` | ✅ | 10 | `EvalAnswerRequest` | `EvalAnswerResponse` |
+| E12 | POST | `/api/quiz` | `paths.quizzes()` | ✅ | 12 | `CreateQuizRequest` | `Quiz` |
+| E13 | GET | `/api/quiz/[id]` | `paths.quiz(id)` | ✅ | 12 | — | `Quiz` |
 | E14 | POST | `/api/quiz/[id]/submit` | `paths.submitQuiz(id)` | 📄 | 13 (+11) | `SubmitRequest` | `QuizReport` |
 | E15 | GET | `/api/quiz/[id]/report` | `paths.report(id)` | 📄 | 13 | — | `QuizReport` |
 | E16 | GET | `/api/mastery` | `paths.mastery(learnerId)` | 📄 | 14 (+11) | query `LearnerQuery` | `MasteryView` |
@@ -294,7 +294,7 @@ Registry: `packages/schemas/src/endpoints.ts`, with 18 JSON endpoints (E1–E5, 
 ```
 - Returns `[]` before the course is built.
 
-### E9. `POST /api/chat`: 📄 PLANNED (Module 10; mastery update needs Module 11)
+### E9. `POST /api/chat`: ✅ LIVE (Module 10; chat evidence → damped BKT, Module 11)
 - **Body:** `ChatRequest = { learnerId: Id, courseId?: Id, message: string }`. `message` is trimmed, length 1–2000.
 - **Behaviour (ARCHITECTURE §6.3):**
   1. Embed the question and retrieve the top 6 chunks.
@@ -341,7 +341,7 @@ Refusal `[mock]` (`mockStates.refusedAnswer`):
 - **Latency:** each Gemini call took **8–9 s** in the Module 1 smoke run (`gemini-3.1-flash-lite`). Expect about 10 s or more per chat turn, so the UI needs a pending state.
 - **DB:** `Chunk` (read), `Mastery` (read/upsert), `MasteryEvent` (insert, `chatMessageId`), `ChatMessage` (insert ×2).
 
-### E10. `GET /api/chat?learnerId={id}`: 📄 PLANNED (Module 10). Build with `paths.chatHistory(id)`
+### E10. `GET /api/chat?learnerId={id}`: ✅ LIVE (Module 10). Build with `paths.chatHistory(id)`
 - **Query:** `LearnerQuery { learnerId }` (registry `query`). Unknown learner → 404.
 - **Response 200:** `ChatMessageView[]`, oldest first:
   `{ id, role: "USER"|"ASSISTANT", content: string, blocks: TutorBlock[] | null, coverage: Coverage | null, refused: boolean, createdAt }`
@@ -355,7 +355,7 @@ Refusal `[mock]` (`mockStates.refusedAnswer`):
 - **Errors (proposed):** 400 for a missing `learnerId`.
 - **DB:** `ChatMessage` (read).
 
-### E11. `POST /api/eval/answer`: 📄 PLANNED (Module 10)
+### E11. `POST /api/eval/answer`: ✅ LIVE (Module 10). Response also has `blocks` (origin-labelled answer)
 - **Purpose:** used by `tools/eval` (RAGAS + citation scoring). Same pipeline as E9 but **no learner, no history, no mastery update**.
 - **Body:** `EvalAnswerRequest = { question: string }` (trimmed, min 1).
 - **Response 200:** `EvalAnswerResponse`
@@ -369,7 +369,7 @@ Refusal `[mock]` (`mockStates.refusedAnswer`):
 - ⚠ Unlike `TutorAnswer`, this shape doesn't enforce `NOT_COVERED ⇒ refused`.
 - **DB:** `Chunk` (read only).
 
-### E12. `POST /api/quiz`: 📄 PLANNED (Module 12)
+### E12. `POST /api/quiz`: ✅ LIVE (Module 12). 2 Gemini calls; 409 if the course has no topics
 - **Body:** `CreateQuizRequest`
 
 | Field | Type | Rule |
@@ -415,7 +415,7 @@ Refusal `[mock]` (`mockStates.refusedAnswer`):
 - **Latency:** at least 2 sequential LLM calls, about **20 s or more** at the measured 8–9 s per call. The UI needs a long-running state.
 - **DB:** `Assessment` (insert), `Question` (insert, `verified`, `verifierAnswer`), `Mastery` (read), `Question.stemHash` via `Assessment.learnerId` (read).
 
-### E13. `GET /api/quiz/[id]`: 📄 PLANNED (Module 12)
+### E13. `GET /api/quiz/[id]`: ✅ LIVE (Module 12)
 - **Path:** `id` = `assessmentId`.
 - **Response 200:** `Quiz` (same as E12). Used to reload `/quiz/[id]` after navigation. Questions are only those with `verified = true`, ordered by `position` (proposed).
 - **Errors:** 404. Allowed after submission (Q14).
