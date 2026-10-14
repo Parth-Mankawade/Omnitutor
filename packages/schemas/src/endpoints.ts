@@ -1,6 +1,6 @@
 import { z } from "zod";
 import {
-  BuildRequest, BuildResponse, CreateLearnerRequest, DeleteSourceResponse, Learner, LearnerQuery,
+  BuildRequest, BuildResponse, CourseQuery, CreateLearnerRequest, DeleteSourceResponse, Learner, LearnerQuery,
   SourceView, TopicView, UploadQuery, UploadResponse,
 } from "./course";
 import { EvalAnswerRequest, EvalAnswerResponse } from "./eval";
@@ -38,8 +38,8 @@ export const endpoints = {
   deleteSource: { method: "DELETE", path: "/api/sources/[id]", query: null, request: null, response: DeleteSourceResponse, status: "live", module: 4 },
   ingestSource: { method: "POST", path: "/api/sources/[id]/ingest", query: null, request: null, response: UploadResponse, status: "live", module: 5 },
   search: { method: "POST", path: "/api/search", query: null, request: SearchRequest, response: SearchResponse, status: "live", module: 8 },
-  buildCourse: { method: "POST", path: "/api/build", query: null, request: BuildRequest, response: BuildResponse, status: "planned", module: 9 },
-  listTopics: { method: "GET", path: "/api/topics", query: null, request: null, response: z.array(TopicView), status: "planned", module: 9 },
+  buildCourse: { method: "POST", path: "/api/build", query: null, request: BuildRequest, response: BuildResponse, status: "live", module: 9 },
+  listTopics: { method: "GET", path: "/api/topics", query: CourseQuery, request: null, response: z.array(TopicView), status: "live", module: 9 },
   chat: { method: "POST", path: "/api/chat", query: null, request: ChatRequest, response: TutorAnswer, status: "planned", module: 10 },
   chatHistory: { method: "GET", path: "/api/chat", query: LearnerQuery, request: null, response: z.array(ChatMessageView), status: "planned", module: 10 },
   evalAnswer: { method: "POST", path: "/api/eval/answer", query: null, request: EvalAnswerRequest, response: EvalAnswerResponse, status: "planned", module: 10 },

@@ -124,8 +124,9 @@ export function createApiClient(options: ApiClientOptions = {}) {
 
     /** Top-k chunks (as citations) for a question, with cosine scores. Costs 1 embedding request (cached per query). */
     search: (body: SearchRequest) => sendJson("search", paths.search(), body),
+    /** Groups the course's material into 5–8 topics (1 Gemini request, cached) and tags every chunk. 409 if learner progress exists, unless `force`. */
     buildCourse: (body: BuildRequest = {}) => sendJson("buildCourse", paths.build(), body),
-    listTopics: () => get("listTopics", paths.topics()),
+    listTopics: (courseId?: string) => get("listTopics", paths.topics(courseId)),
 
     chat: (body: ChatRequest) => sendJson("chat", paths.chat(), body),
     chatHistory: (learnerId: string) => get("chatHistory", paths.chatHistory(learnerId)),

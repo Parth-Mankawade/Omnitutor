@@ -78,6 +78,18 @@ describe("daily budget (ledger)", () => {
     assert.equal(restarted.today().day, "2026-10-15");
     assert.deepEqual(restarted.today().generate, { requests: 0, inputTokens: 0 });
   });
+  it("two processes sharing the file both count (no lost updates)", () => {
+    const file = path.join(dir, "shared-usage.json");
+    const server = new UsageLedger(file); // e.g. the dev server
+    const script = new UsageLedger(file); // e.g. an ingestion script running next to it
+    server.reserve("generate", 1, 5);
+    script.reserve("generate", 2, 5);
+    server.addTokens("generate", 100);
+    script.addTokens("generate", 50);
+    server.reserve("generate", 1, 5);
+    assert.deepEqual(script.today().generate, { requests: 4, inputTokens: 150 });
+    assert.throws(() => script.reserve("generate", 2, 5), isLocalLimit(/Daily generate budget reached \(4\/5/));
+  });
   it("embeddings count one request per text", async () => {
     const ledger = new UsageLedger(null);
     const l = new RateLimiter("embed", { rpm: 100, tpm: 1e9, rpd: 1e6, concurrency: 2 }, ledger, fakeClock());

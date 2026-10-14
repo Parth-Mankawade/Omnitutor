@@ -8,23 +8,26 @@ import { AppError, LlmError, notFound, notReady } from "../errors";
 import { embed as geminiEmbed, type EmbedTask } from "../llm";
 import { resolveSourcePath } from "../storage";
 import { embedText, extractPdf, type ExtractPage } from "./pdf";
+import { SLIDES_PER_BATCH, extractPptx, type DeckReport, type ExtractSlides } from "./pptx";
 import type { ChunkDraft, IngestStats } from "./types";
 import { extractVideo, videoWindows, type SegmentReport } from "./video";
 
 export * from "./pdf";
+export * from "./pptx";
 export * from "./types";
 export * from "./video";
 
 /** Injectable for tests (defaults call Gemini through the limiter + cache). */
 export type IngestDeps = {
   extractPage?: ExtractPage;
+  extractSlides?: ExtractSlides;
   embed?: (texts: string[], task: EmbedTask) => Promise<number[][]>;
 };
 
 /** A PROCESSING row with no progress for this long is considered interrupted. */
 export const STALE_MS = 2 * 60_000;
 
-const SUPPORTED: Source["type"][] = ["PDF", "VIDEO"];
+const SUPPORTED: Source["type"][] = ["PDF", "PPTX", "VIDEO"];
 const running = new Set<string>();
 
 /** Turns any failure into a message a student/teacher can act on (stored in Source.error). */
@@ -36,8 +39,9 @@ function userMessage(e: unknown): string {
   return raw.replace(/^\[llm:\w+\] /, "").slice(0, 500);
 }
 
-// PDF: one unit per page. Video: upload + one unit per ≤60 s window.
-const unitsFor = (s: Source) => (s.type === "PDF" ? (s.pageCount ?? 0) : videoWindows(s.durationSec ?? 0).length + 1);
+// PDF: one unit per page. PPTX: one per batch of slides. Video: upload + one unit per ≤60 s window.
+const unitsFor = (s: Source) =>
+  s.type === "PDF" ? (s.pageCount ?? 0) : s.type === "PPTX" ? Math.ceil((s.pageCount ?? 0) / SLIDES_PER_BATCH) : videoWindows(s.durationSec ?? 0).length + 1;
 
 /**
  * Validates and marks the source PROCESSING, then starts the job. The returned `job` never
@@ -64,26 +68,31 @@ export async function requestIngestion(sourceId: string, deps: IngestDeps = {}):
   return { response: { id: sourceId, status: "PROCESSING" }, job };
 }
 
-export type IngestResult = { ok: true; chunks: number; stats: IngestStats; video?: SegmentReport } | { ok: false; error: string };
+export type IngestResult = { ok: true; chunks: number; stats: IngestStats; video?: SegmentReport; deck?: DeckReport } | { ok: false; error: string };
 
 /** The job: extract (per type) → embed → replace the source's chunks atomically → READY (or FAILED). */
 export async function runIngestion(sourceId: string, deps: IngestDeps = {}): Promise<IngestResult> {
   const embed = deps.embed ?? geminiEmbed;
   const step = () => prisma.source.update({ where: { id: sourceId }, data: { progressDone: { increment: 1 } } }).then(() => {});
   try {
-    const source = await prisma.source.findUniqueOrThrow({ where: { id: sourceId } });
+    const source = await prisma.source.findUniqueOrThrow({ where: { id: sourceId }, include: { course: { select: { name: true } } } });
+    const courseName = source.course.name;
     const absPath = resolveSourcePath(source.path);
     const fileSha = await sha256File(absPath);
 
     let chunks: ChunkDraft[];
     let stats: IngestStats;
     let video: SegmentReport | undefined;
+    let deck: DeckReport | undefined;
     if (source.type === "PDF") {
-      ({ chunks, stats } = await extractPdf(new Uint8Array(await readFile(absPath)), fileSha, { extractPage: deps.extractPage, onPageDone: step }));
+      ({ chunks, stats } = await extractPdf(new Uint8Array(await readFile(absPath)), fileSha, { courseName, extractPage: deps.extractPage, onPageDone: step }));
+    } else if (source.type === "PPTX") {
+      ({ chunks, stats, report: deck } = await extractPptx(new Uint8Array(await readFile(absPath)), fileSha, { courseName, extractSlides: deps.extractSlides, onBatchDone: step }));
     } else if (source.type === "VIDEO") {
       if (!source.durationSec) throw new AppError("bad_request", "This video has no recorded duration; delete and upload it again.");
       const existingFile = source.geminiFileName && source.geminiFileUri ? { name: source.geminiFileName, uri: source.geminiFileUri, expiresAt: source.geminiFileExpiresAt } : null;
       ({ chunks, stats, report: video } = await extractVideo({
+        courseName,
         absPath,
         fileSha,
         durationSec: source.durationSec,
@@ -107,7 +116,7 @@ export async function runIngestion(sourceId: string, deps: IngestDeps = {}): Pro
       prisma.source.update({ where: { id: sourceId }, data: { status: "READY", error: null, progressDone: stats.units, progressTotal: stats.units } }),
     ]);
     console.info(`[ingest] ${sourceId} (${source.type}): READY, ${chunks.length} chunks · ${stats.geminiCalls} Gemini calls, ${stats.cached} cached, ${stats.inputTokens} input tokens`);
-    return { ok: true, chunks: chunks.length, stats, ...(video && { video }) };
+    return { ok: true, chunks: chunks.length, stats, ...(video && { video }), ...(deck && { deck }) };
   } catch (e) {
     const error = userMessage(e);
     console.error(`[ingest] ${sourceId}: FAILED: ${error}`);

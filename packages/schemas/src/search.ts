@@ -4,7 +4,7 @@ import { Count, Id } from "./common";
 
 /** POST /api/search: retrieval over all READY sources (the tutor's first step, exposed for UI + checks). */
 export const SearchRequest = z.object({
-  query: z.string().trim().min(1).max(500),
+  query: z.string().trim().min(1).max(2000), // same cap as a tutor message; pasted exam questions run to 600+ chars
   k: z.number().int().min(1).max(20).optional(), // default 6
   courseId: Id.optional(),
 });

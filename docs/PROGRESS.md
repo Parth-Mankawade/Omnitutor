@@ -7,27 +7,40 @@ Legend: ✅ done & verified · 🟡 in progress / awaiting review · ⬜ not sta
 
 ---
 
-## 0. Summary (2026-10-14, after Modules 7 + 8)
+## 0. Summary (2026-10-14, after the overfitting audit + Module 6)
 
 - **Done and verified on your real data:**
   - **PDF ingestion (5):** 47/47 facts.
-  - **Video ingestion (7):** 12/12 on-screen facts at the right time, mean start error 0.3 s.
-  - **Retrieval (8):** hit@1 90%, hit@6 100%, MRR 0.95 on the Stage-1 test set.
-- **Knowledge base:** `process-scheduling-9pages.pdf` (14 chunks) + `cpu-scheduling-2min.mp4` (12 segments), searchable via `POST /api/search`.
-- **Gemini used today (app ledger):** generate 16/450 (54.6K input tokens), embed 52/900. AI Studio also counts 3 + 4 from the Module 1 smoke run (before the ledger).
-- **Tests:** 197 unit/contract · 39 e2e · production build 0 warnings.
+  - **PPTX ingestion (6):** 3 decks, real Gemini.
+    - REAL lecture deck (40 slides): 21/21 facts.
+    - REAL lab deck (24 slides): 15/15, including a table read from a picture.
+    - Generated deck: 9/9.
+    - The parser kept every content text run of 4 real decks (5,061 runs).
+  - **Video ingestion (7):** 12/12 on-screen facts at the right time, mean start error 0.9 s (0.3 s before the prompt de-contamination; see the audit).
+  - **Retrieval (8):** Stage-1 hit@1 90%, MRR 0.95. **New holdout (36 unseen questions): hit@1 95%, MRR 0.97** vs a random baseline of 10% / 0.26.
+- **Overfitting audit (§4):**
+  - Dataset examples were removed from the ingestion prompts.
+  - Unchanged code was run on a REAL different PDF (21/21 facts) and a SYNTHETIC different video (14/14 facts, 5/5 slide cuts).
+  - Two bugs were fixed: the ledger lost updates across processes, and the search query cap was too low.
+- **Knowledge base:** `process-scheduling-9pages.pdf` (14 chunks) + `cpu-scheduling-2min.mp4` (12 segments) in `demo-course`. The holdout files live in their own courses (`holdout-pipes`, `holdout-hash`).
+- **Gemini used today (app ledger, Pacific day 2026-10-13):** generate 48/450 (109.7K input tokens), embed 220/900.
+- **Tests:** 211 unit/contract · 39 e2e · typecheck 7/7 · production build 0 warnings (last checked after Module 8).
 - **Not verified:**
-  - Video transcript word-accuracy (no reference transcript).
+  - Video transcript word-accuracy on the real video (no reference transcript; on the synthetic holdout all 6 spoken facts were found).
   - PDF `#page=` / video seek in a real browser (needs the UI).
-  - Refusal threshold (too few questions to calibrate).
+  - Refusal: a score threshold cannot do it alone (§4 audit, point 7); the tutor's NOT_COVERED judgment is still to be evaluated.
+- **Weak spots found:**
+  - Retrieval on code pages (hit@1 2/5).
+  - The title page acts as a "hub" for off-material queries.
+  - Video boundary regression (2 of 11 boundaries off).
+  - PPTX diagrams drawn with shapes lose their layout.
 - **Next:**
-  - Module 6 (PPTX) needs a real deck with pictures.
-  - Module 9 (course build) → Module 10 (tutor).
+  - Module 9 done (2 pre-registered checks failed on demo-course; see §4) → Module 10 (tutor).
 - **Waiting on you:**
   - Review.
   - Push.
   - Confirm the deadline.
-  - Real .pptx with pictures.
+  - Choose the demo deck. The real decks are about VM/file systems; the only scheduling deck is the generated one.
 
 ## 1. Backend modules (Parth): cross-referenced with ARCHITECTURE.md §10
 
@@ -41,10 +54,10 @@ Legend: ✅ done & verified · 🟡 in progress / awaiting review · ⬜ not sta
 | 4 | Learners API, upload (streamed, validated), sources list/delete, `/api/files/[id]` (Range) | file uploads; video seeks in browser | 🟡 awaiting review | 43 core + 37 e2e (dev **and** prod). **Browser seek not yet tried with a real mp4** (server Range verified) |
 | 4.5 | Gemini rate limiter + result cache + usage ledger (`limiter.ts`, `cache.ts`) | stay under free-tier limits; re-runs free | ✅ | 17 unit tests (fake clock); real: smoke + Stage-1 runs paced, re-run 0 requests |
 | 5 | PDF ingestion (`POST /api/sources/[id]/ingest`) | chunks with page + figure chunks | 🟡 awaiting review | **Real PDF: 14 chunks (5 figures), 47/47 facts, page locators exact, re-run free**; 12 unit tests (fake Gemini) + 2 e2e |
-| 6 | PPTX ingestion | one chunk per slide, in order | ⬜ | needs a real .pptx with pictures (the generated deck has none) |
+| 6 | PPTX ingestion | one chunk per slide, in order | 🟡 awaiting review | **Real decks: 21/21 (40 slides, 8 pictures), 15/15 (24 slides, table read from a picture), 9/9 (generated)**; one SLIDE chunk per slide in order; re-run free; parser keeps 100% of content text on 4 real decks. Limitation: shape-drawn diagrams lose layout |
 | 7 | Video ingestion (≤60 s windows via Files API `videoMetadata`) | timestamped segments | 🟡 awaiting review | **Real video: 12/12 facts at the true time, mean start error 0.3 s, coverage 100%, re-run free.** Transcript accuracy NOT verified |
-| 8 | Retrieval + `POST /api/search` | top-6 includes the right chunk | 🟡 awaiting review | **Real test set: hit@1 90%, hit@3/6 100%, MRR 0.95** (10 answerable questions, PDF + video) |
-| 9 | Course build + `/api/build`, `/api/topics` | 5–8 sensible topics, chunks tagged | ⬜ | |
+| 8 | Retrieval + `POST /api/search` | top-6 includes the right chunk | 🟡 awaiting review | **Real test set: hit@1 90%, hit@3/6 100%, MRR 0.95** (10 answerable questions, PDF + video). **Holdout (20 answerable): hit@1 95%, MRR 0.97**; weak on code pages |
+| 9 | Course build + `/api/build`, `/api/topics` | 5–8 sensible topics, chunks tagged | 🟡 awaiting review | **Real: VM deck 18/18 pre-registered checks; demo-course 19/21** (preemption not named in any topic; tagging 79% vs 80% threshold). Rebuild free (cache); Q9 409 unless force |
 | 10 | Tutor API + grounding guards (+ `/api/eval/answer`) | cited answer; off-material refused | ⬜ | citation panel UI is teammate Task 3 |
 | 11 | BKT `updateMastery` (unit tested) | known sequences → expected values | ⬜ | signature promised to teammate |
 | 12 | Quiz generate + verify + no-repeat | verified questions, no seen stems | ⬜ | |
@@ -295,7 +308,7 @@ Design:
 | PENDING→PROCESSING→READY, page-cited chunks, embeddings, stats, progress | synthetic PDF + **fake Gemini** | ✅ |
 | Re-run replaces chunks; failing page → FAILED "Page 2: …", no chunks; empty → FAILED; 2nd request while running → 409; PPTX/unknown → 409/404 | synthetic + fake Gemini | ✅ 5 |
 | Stale-PROCESSING recovery (only stale rows) | DB | ✅ 1 |
-| e2e: upload never starts ingestion (usage unchanged); ingest PPTX → 409, unknown → 404 | synthetic, no Gemini | ✅ 2 |
+| e2e: upload never starts ingestion (usage unchanged); ingest PPTX → 409, unknown → 404 (Module 6 replaced the PPTX case with "already processing → 409") | synthetic, no Gemini | ✅ 2 |
 | **Real:** `npm run stage1:pdf` on `process-scheduling-9pages.pdf` | **your PDF, real Gemini** | ✅ run 1: 12 s, 9 requests (8,091 input tokens), 14 embeddings · run 2: 0 requests (cache) |
 | **Real:** fact recall vs ground truth | your PDF | ✅ **47/47 (100%)**; figures on pages 3 (×2), 4, 5, 9; locators page-only 1–9; 768-dim embeddings |
 
@@ -307,6 +320,168 @@ Manual review of all 14 chunks:
   - The page 3 histogram description says it starts at ~160 at 0 ms (it actually peaks at ~155 near 2 ms).
   - Page 4's nested bullets were flattened onto one line.
   - Page 5 has an extra title-only text chunk.
+
+### Overfitting audit — 2026-10-14 (your request; nothing in retrieval changed before results were recorded)
+
+**1. Dataset-specific values in the implementation.** Found in the ingestion prompts, now fixed:
+
+| Where | Contamination | Fix |
+|---|---|---|
+| `ingest/pdf.ts` prompt | Examples copied from the Stage-1 PDF: footer "CS C372 OPERATING SYSTEMS" (page footer), "Process state diagram" and "running -> waiting: I/O or event wait" (page 5); subject fixed to "Operating Systems" | `pdfPagePrompt(courseName)`: subject-agnostic, no examples from any dataset; the course name comes from the DB |
+| `ingest/video.ts` prompt | Subject fixed to "Operating Systems" | `videoPrompt(courseName)`, same treatment |
+| Cache keys | Prompt text not in the key | Key now includes `sha256(prompt)`, so any prompt change misses the cache automatically |
+
+A grep of `packages/*/src` and `apps/web` for file names, page numbers, timestamps, concept words, chunk/question ids and expected answers finds nothing else. Every numeric constant has a non-dataset origin (architecture, design decision, limiter estimate), with one exception: the 60 s video window was chosen after v1 drifted on the Stage-1 video. Point 8 shows it carries over to a different video.
+
+**2. Tuning to the 26 chunks / 15 questions:** none in retrieval. `retrieve.ts` was last modified at 03:47:09, before the first Stage-1 query (03:48:24). It has no thresholds, keyword rules or re-ranking.
+
+**3. Origin of the 15 Stage-1 questions:**
+- 8 come from the IIIT Nagpur exam papers: CPU/I-O bound, the printf transition, missing transitions, and the off-material Banker's, page faults, disk seek, SJF order and EDF questions.
+- 7 were written from the material: dispatcher, RR numerical, TAT formula, and the 4 video questions.
+- All 15 were written at 03:12, before any ingestion or retrieval existed.
+
+**4. Manually encoded expected results:** yes, by design, and only in test files (`tools/e2e/stage1/*.json`, `data/demo/testset.*.json`). No application code reads them (grep).
+
+**5. Video ground truth:** ffmpeg scene detection (`select='gt(scene,0.25)'`) on the original file gave 11 cuts. One frame per segment was read for its on-screen text. Re-measured during the audit, all 11 cuts match within 0.04 s. Speech is not part of the ground truth because no reference transcript exists.
+
+**6. NEW holdout retrieval test** (`data/demo/testset.holdout.json`, sha `a7d488da`). Written at 04:11, after `retrieve.ts` was frozen, and run once.
+- **Answerable items (20):** 4 verbatim exam questions (partial coverage), 11 new PDF questions (6 need a figure or image-only page; 1 Hinglish, 1 misspelled) and 5 video on-screen facts.
+- **Off-material items (16):** 5 unrelated, 5 same course but not covered, 6 near-miss scheduling questions (4 of them verbatim exam questions).
+
+| Metric | Holdout | Random ranking of the same 26 chunks |
+|---|---|---|
+| hit@1 / hit@3 / hit@6 | **95% / 100% / 100%** | 10% / 28% / 48% |
+| MRR | **0.97** | 0.26 |
+
+- **Only rank-1 miss:** "where does the scheduler choose the next process from?" The rank-1 result was the definition segment (24.8–38.8 s), which also says "picks one process from the ready queue". The pre-registered segment came 3rd. It stays counted as a miss.
+- **Caveat:** 26 chunks is a tiny pool; top-6 covers 23% of it.
+
+**7. Off-material probes** (top-3 chunks and scores in `data/demo/testset.holdout.report.json`):
+
+| Group | top score | Refused at τ=0.55 / 0.60 (both fixed before the run) |
+|---|---|---|
+| Answerable (20) | 0.650–0.820 | 0 refused at either τ (all kept) |
+| Unrelated (capital, photosynthesis, linked list, cricket, prompt injection) | 0.493–0.569 | 3/5 · 5/5 |
+| Same course, not covered (deadlock, thrashing, TestAndSet, zombie, first-fit) | 0.597–0.666 | 0/5 · 2/5 |
+| Near-miss scheduling (kernel mode, priority, SRTF, MLFQ, CFS, convoy) | 0.629–0.707 | 0/6 · 0/6 |
+
+- **A score threshold cannot separate near-miss questions from answerable ones.** The SRTF exam question scores 0.707, above the lowest answerable question (0.650). The tutor must refuse on the model's NOT_COVERED judgment and use τ only as a floor (0.60 removes all unrelated questions and keeps every answerable one).
+- **The title page (p.1) is a "hub":** it is the top-1 chunk for 7/16 off-material queries.
+- **API limit found:** the 608-char verbatim SRTF question was rejected because the search query cap was 500 chars. It was recorded as a failure, then the cap was raised to 2,000 (the same cap as a tutor message). After the fix the question is accepted, with a top score of 0.707.
+
+**8. A different PDF / video / question set, unchanged code** (`npm run holdout:generalize`; ground truth `tools/e2e/holdout/generalization.json` written before the first run; each file in its own course):
+
+| Input | Ingestion | Ground truth | Retrieval (own course) |
+|---|---|---|---|
+| **REAL** `pipes-c-program.pdf`: C code listing, 3 A4 pages, course "Systems Programming Lab: Pipes in C" | READY in 4.2 s; 3 requests (2,616 tokens); re-run 0 | **21/21** facts (code copied verbatim) | **hit@1 2/5** (random 1/3): weak on code; one chunk per page, and the pages embed alike |
+| **SYNTHETIC** `hash-tables-synthetic.mp4`: 69.4 s, 6 rendered slides + Windows TTS, built for this test | READY in 19.1 s; 2 windows (6,880 tokens); re-run 0 | **14/14** facts (8 on-screen, 6 spoken); **5/5 slide cuts** (±1.5 s), 0 extra; mean start error **0.22 s**; window edge at 34.7 s (inside a slide) merged correctly | **hit@1 5/5** |
+
+- **No cross-course results:** 0 across 14 queries.
+- **Question set:** the retrieval check now takes any test-set path (`npm run stage1:retrieval -- <file>`). It was hardcoded to the Stage-1 file.
+- **Code path:** upload → `requestIngestion` → `extractPdf` / `extractVideo` (course name only) → `embed` → `retrieve(courseId)`. There is no branch on file name, page, time or subject.
+
+**Regression found by re-running Stage-1 after the prompt fix:**
+- **PDF:** unchanged at 47/47.
+- **Video:** still 12/12 facts at ±3 s, but the mean start error went from 0.3 s to 0.9 s.
+- **Video boundary recall vs the scene cuts:** 10/11 at ±1.5 s.
+  - The 132.4 s cut ("Key Exam Points") is missed: it is merged into 124.8–154.1 s, a 7.6 s start error for that section.
+  - There is an extra boundary at 51.4 s: the "How Scheduling Works" slide was split at the window edge with different titles, so the edge merge didn't apply.
+- **Status:** open, not tuned away.
+
+**Bug found and fixed:** the usage ledger lost updates when two processes used Gemini (dev server + a script). Each process kept a cached copy and overwrote the other's counts. It now re-reads the file before every update and writes atomically. Covered by a unit test and verified live: the server reported the script's 5 requests.
+
+**Audit cost:** generate 17 requests, about 30K input tokens (12 for the Stage-1 re-ingestion after the prompt fix, 5 for the holdout files); embed about 80 requests (36 holdout questions, about 22 re-ingestion, 9 holdout chunks, 14 holdout-course queries).
+
+### Module 6 — PPTX ingestion — 2026-10-14 (REAL Gemini, real decks)
+
+**As built:**
+- Exact parts from the XML, with no model:
+  - slide order from `ppt/presentation.xml` (not file names)
+  - titles (title placeholder, or a short first line when the deck has no title placeholders)
+  - text with bullet levels, tables as Markdown rows, SmartArt text, speaker notes
+- Slide-number, date and footer placeholders are dropped, along with slide-number fields.
+- Pictures go to Gemini in batches of 5 slides. Gemini returns figure descriptions and concept labels (cached by file hash + slides + prompt hash).
+- Pictures that are skipped, with the reason:
+  - EMF, WMF, SVG, GIF: unsupported format
+  - icons under 32 px
+  - logos on ≥ 3 slides and more than half the deck
+  - pictures over 7 MB, or over 14 MB per batch
+- Unreadable content pictures leave a `[Figure omitted: …]` note in the chunk (decision Q18).
+- Output: one `SLIDE` chunk per slide.
+
+**How it was verified:**
+- **1. Parser on the real decks, no Gemini.** Every text run in the slide XML was compared with the parser output.
+  - Decks: VM deck (40 slides), Lab2 deck (24), Deadlock deck (167), generated deck (10).
+  - Result: **all 5,061 runs present** except slide numbers, slide-number fields and tab-only runs (all dropped on purpose).
+  - Slide order matches an independent count on all 4 decks.
+- **2. Ground truth before ingestion** (`tools/e2e/pptx/decks.json`):
+  - text facts from the XML
+  - figure facts written by viewing every picture the parser sends
+- **3. Real Gemini run** (`npm run stage1:pptx`). Each deck in its own course:
+
+| Deck | Gemini | Facts | Retrieval (own course) |
+|---|---|---|---|
+| **REAL** OS Module 5 deck (Virtual Memory + File Mgmt): 40 slides, 8 pictures, no title placeholders | 8 requests, 16,567 input tokens, 40 embeds; re-run 0 | **21/21** (titles, order, count; disk, directory and linked-list figures) | hit@1 4/4 |
+| **REAL** OS lab deck (file system calls): 24 slides, code-heavy, slide 4 = title + picture only | 5 requests, 5,151 tokens, 24 embeds; re-run 0 | **15/15**, including all 8 `O_*` flags read from the picture | hit@1 3/3 ("What does O_TRUNC do?" → the picture-only slide) |
+| **GENERATED** Stage-1 deck: 10 slides, text only | 2 requests, 1,137 tokens | **9/9** | hit@1 2/2 |
+
+**Manual review of the figure descriptions:**
+- Faithful, nothing invented: platters, spindle, actuator arm, heads; tracks and sectors; partitions → directory → metadata table → directory entry; linked list of file names with pointers to data blocks; all 8 flag rows verbatim.
+- Minor issues:
+  - "heads extending to each surface" overstates the drawing, which shows one head per platter.
+  - The user/file/folder icons on VM slide 19 were described; that's harmless, slight noise.
+- The decorative illustration on slide 40 was correctly not described.
+
+**Unit tests (fake Gemini; they only cover our deterministic code, they are not evidence that the feature works):** 13 new tests.
+- slide order vs file names, placeholders, entities, fallback titles
+- picture filtering + omitted notes
+- PNG/JPEG header sizes
+- chunk composition, batching + progress, failure message, request parts
+- PPTX → READY through the orchestrator
+
+**Not verified / limitations:**
+- **Diagrams drawn with PowerPoint shapes** (e.g. VM slides 5–8 and 12–18: page tables and FIFO/LRU traces) become loose labels with no layout. Only placed pictures get descriptions. A fix needs slide rendering (LibreOffice is on the cut list).
+- Speaker notes are verified on the synthetic deck only. The real decks' notes parts are empty.
+- Charts are not extracted (noted as `[Figure omitted: chart (not extracted)]`). None of the real decks has one.
+
+### Module 9 — Course build — 2026-10-14 (REAL Gemini, 2 courses)
+
+**As built:**
+- `POST /api/build` (`buildCourse` in `packages/core/src/build.ts`).
+- One `generateJson` call (role strong) over an outline of the course: one line per chunk with location, kind, title (or excerpt) and concept labels, grouped by source in material order.
+  - Returns 5–8 topics: name, description, prerequisite keys.
+  - The prompt is subject-agnostic (course name only).
+  - Cached by prompt hash + outline hash.
+- Prerequisites that are unknown, self-referencing or forward are dropped. The graph is acyclic and `seq` follows prerequisites.
+- Topics are embedded (`RETRIEVAL_QUERY`). Each chunk is tagged to its nearest topic by cosine.
+- One transaction: delete the old topics (cascade), insert the new ones, tag the chunks.
+- **Q9:** if any topic has mastery, mastery events or questions, the build is refused with 409 unless `{ force: true }`.
+- `GET /api/topics?courseId=` lists topics by `seq` with chunk counts.
+
+**Acceptance criteria written BEFORE the code** (`tools/e2e/build/expectations.json`):
+- structure
+- concepts the material teaches must appear
+- concepts absent from the material must not appear (absence verified by SQL over the chunks)
+- tagging of pre-registered locations ≥ 80%
+- basics before algorithms
+
+| Course | Gemini | Result |
+|---|---|---|
+| `pptx-vm` (REAL 40-slide VM + file-management deck) | 1 request (1,359 tokens) + 6 embeds; rebuild 0 | **18/18 checks pass.** 6 topics (VM intro → VM mechanics & faults → page replacement; file systems & disk → allocation → directory & free space). Tagging 11/12 (92%). Nothing invented |
+| `demo-course` (REAL PDF + video) | 1 request (1,079 tokens) + 5 embeds; rebuild 0 | **19/21 pass, 2 FAIL** (see below). 5 topics: Foundations of CPU Scheduling → Process Execution and States → Scheduler and Dispatcher → Performance Metrics → Round Robin. Nothing invented (no FCFS, SJF, deadlock…) |
+
+**The 2 demo-course failures, recorded as is (criteria not changed after the run):**
+1. **No topic names preemptive / non-preemptive scheduling.** It appears in one video segment, which was folded into "Foundations of CPU Scheduling".
+2. **Tagging 11/14 = 79%** (threshold 80%).
+   - Real miss: the p.4 "CPU-bound usage timeline" figure went to Foundations, while its p.4 siblings went to "Process Execution and States".
+   - The 2 "How scheduling works" video segments went to Foundations. That is defensible by meaning, but it doesn't match the pre-registered regex.
+- **Also observed:** topic sizes are uneven (Foundations 15 chunks, including all 12 video segments; Scheduler and Dispatcher 1).
+- **Not tuned on these criteria.** A candidate improvement is to let the planning call assign units to topics instead of nearest-embedding. It would need a fresh course with new pre-registered criteria to evaluate fairly. Your call.
+
+**Tests:**
+- 8 unit/DB tests with a fake planner (pure helpers; tagging; rebuild; Q9 409 + force cascade; unknown/empty course).
+- 2 e2e tests (validation 400, unknown/empty course 409, no quota spent).
+- Contract: build + topics are live; `listTopics` takes `?courseId`.
 
 ## 5. Accuracy / eval metrics (filled in Module 15)
 
@@ -323,6 +498,13 @@ Manual review of all 14 chunks:
 | Gemini cost: video | — | **≈91–96 input tokens per second of video**; 1 request per ≤60 s window |
 | Video timestamp accuracy (Stage-1, on-screen ground truth) | ≤ 3 s | **mean 0.3 s, max 0.9 s (12/12)** |
 | Retrieval hit@6 / hit@1 / MRR (Stage-1 test set) | ≥ 80% | **100% / 90% / 0.95** |
+| Retrieval hit@6 / hit@1 / MRR (**holdout**, 20 answerable, written after retrieval was frozen) | ≥ 80% | **100% / 95% / 0.97** (random: 48% / 10% / 0.26) |
+| Off-material top score (holdout): unrelated / same course / near-miss | separable? | 0.49–0.57 / 0.60–0.67 / 0.63–0.71 vs answerable 0.65–0.82: **not separable by τ alone** |
+| Generalization: REAL other PDF (code listing) facts | ≥ 90% | **21/21**; retrieval hit@1 2/5 (weak) |
+| Generalization: SYNTHETIC other video facts / slide cuts / start error | ≤ 3 s | **14/14 · 5/5 · 0.22 s** |
+| PPTX ingestion facts (2 REAL decks + generated) | ≥ 90% | **21/21 · 15/15 · 9/9** |
+| PPTX parser text coverage (4 real decks, 5,061 text runs) | 100% of content | **100%** (only slide numbers / tabs dropped) |
+| Gemini cost: PPTX | ~1 request per 5 slides | **40 slides → 8 requests (16.6K tokens); 24 → 5 (5.2K); re-run 0** |
 | Sim: mastery gain, adaptive vs random | adaptive > random | — |
 | Sim: repetition rate | 0% | — |
 
@@ -344,17 +526,22 @@ Manual review of all 14 chunks:
   4. Module 4 now also covers the learners endpoints, and Module 9 covers `/api/topics`.
 - **Module 5 decisions:**
   - **Ingestion is explicit** (`POST /api/sources/[id]/ingest`), not automatic on upload. This gives control over when Gemini quota is spent, and tests never trigger calls. The same call re-runs or retries, with finished pages from the cache.
-  - Ingestion currently supports **PDF only**; PPTX/VIDEO get a clear 409.
+  - Ingestion supported PDF only at Module 5. Video was added in Module 7, PPTX in Module 6 (2026-10-14).
   - A failed page fails the whole run (no partial chunks); retrying is cheap because finished pages are cached.
-  - Cache key = file SHA-256 + page + `PDF_PROMPT_VERSION` + model + schema. Bump `PDF_PROMPT_VERSION` after prompt changes.
+  - Cache key = file SHA-256 + page + `PDF_PROMPT_VERSION` + SHA-256 of the prompt text + model + schema. Prompt edits miss the cache automatically. Bump the version for schema/chunking changes.
 - **Module 4 decisions:**
   - Uploads are **raw bytes + `?filename=`** (not multipart) so they stream to disk.
   - The **extension decides the type** and the **content must match**; the browser MIME type is ignored.
   - Source ids are UUIDs.
   - New uploads stay `PENDING` until Module 5 starts ingestion.
-- `docs/TEAMMATE_BRIEF.md` was missing from disk (never committed). It was recreated as v1.1. If it was deleted on purpose, delete it again.
+- `docs/TEAMMATE_BRIEF.md`: you deleted it on purpose. I recreated it by mistake; per your instruction it is left alone until you decide.
 - Considered and deferred: an `LlmCall` table logging tokens per call (useful for quota tracking). Add only if needed.
 - **Stop the dev server before `npm install`**: `@sc/db`'s postinstall (`prisma generate`) hits the same Windows DLL lock.
 - `@sc/core` and `@sc/schemas` are `"type": "module"`. Without it `tsx` loaded them as CommonJS and named exports failed. `@sc/db` stays CommonJS because `prisma.config.ts` uses `__dirname`.
 - Free tier: the limits are requests per minute and per day, and no charges apply unless billing is enabled on the AI Studio project. Check per-model limits in AI Studio → Rate limits.
 - First `docker pull` failed with a transient Docker Hub auth EOF; the retry worked.
+- **Audit follow-ups (open, not tuned on the holdout):**
+  1. Code pages retrieve poorly (one chunk per page). Candidate fix: add each page's concept labels to the embedded text, or split code by blocks. Decide with the Module 15 eval, not this holdout.
+  2. Title-only chunks (PDF page 1, video section cards) act as hubs for off-material queries. Candidate fix: merge title-only chunks into the next chunk.
+  3. Video boundaries regressed after the prompt fix (132.4 s cut missed, extra 51.4 s boundary).
+  4. Refusal needs the model's NOT_COVERED judgment (Module 10). τ = 0.60 is a reasonable floor on both test sets.

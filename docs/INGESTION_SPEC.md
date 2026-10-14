@@ -101,7 +101,7 @@ Embedding requests count once per text. Defaults: Flash Lite 12 RPM / 200K TPM /
 | Step | Detail | Evidence |
 |---|---|---|
 | Split | `pdf-lib` copies each page into a 1-page PDF (`splitPdf`) | unit test |
-| Extract | One `generateJson` call per page on `LLM_MODEL_FAST`: inline `application/pdf` + prompt `PDF_PAGE_PROMPT` (version `pdf-page-v1`). Output `{ blocks: [{ kind: text \| figure \| table, title, content }], conceptLabels }`. Cached by file SHA-256 + page + prompt version + model + schema | **real:** 9 pages → 9 requests, 8,091 input tokens (≈900/page), 12 s |
+| Extract | One `generateJson` call per page on `LLM_MODEL_FAST`: inline `application/pdf` + prompt `pdfPagePrompt(courseName)` (version `pdf-page-v2`; subject-agnostic, the course name from the DB is the only context, no dataset examples). Output `{ blocks: [{ kind: text \| figure \| table, title, content }], conceptLabels }`. Cached by file SHA-256 + page + prompt version + SHA-256 of the prompt + model + schema | **real:** 9 pages → 9 requests, 8,091 input tokens (≈900/page), 12 s |
 | Chunk | Consecutive text/table blocks are grouped (≤ 1,200 chars) into `TEXT`; **each figure becomes its own `FIGURE` chunk** (caption = `title`); empty blocks dropped; footers/boilerplate skipped by the prompt | **real:** 14 chunks, 5 figures (pages 3 ×2, 4, 5, 9) |
 | Image-only pages | Slides embedded as pictures are transcribed (text) and described (figures) | **real:** pages 4 and 9 extracted fully (facts 5/5, 7/7) |
 | Locator | `page` = 1-based page index in the file | **real:** all 14 chunks page-only, 1–9 |
@@ -109,24 +109,31 @@ Embedding requests count once per text. Defaults: Flash Lite 12 RPM / 200K TPM /
 | Progress | `progressTotal` = pages; `progressDone` +1 per page | real: 0 → 3 → 6 → 8 → 9 |
 | Quality | Ground truth `tools/e2e/stage1/expectations.json` (47 facts) | **47/47 (100%)**. Manual review: faithful. Minor: histogram start value imprecise (p3), nested bullets flattened (p4), title-only chunk (p5) |
 
-### 4.2 PPTX (PLANNED, Module 6)
+### 4.2 PPTX (VERIFIED, Module 6; real decks)
 
-| Step | Detail | Evidence |
+| Step | Detail (`packages/core/src/ingest/pptx.ts`) | Evidence |
 |---|---|---|
-| Order | Slide order from `ppt/presentation.xml` `<p:sldIdLst>` plus `ppt/_rels/presentation.xml.rels` | PLANNED; `jszip@3.10.2` installed |
-| Text | All `<a:t>` runs per slide | PLANNED |
-| Images | Slide rels → `ppt/media/*` | PLANNED. ⚠ Decks often embed `.emf`/`.wmf`, which Gemini doesn't accept as image input. **Skip unsupported formats** (risk, see INTEGRATION_AUDIT) |
-| Extract | Batches of **5 slides** (text + images) per `generateJson` call | **VERIFIED pattern** on 2 synthetic slides (Module 1 smoke `slides`: correct slide numbering, bar counts and colours; 2214 in / 137 out tokens) |
-| Chunk | **One `Chunk(kind=SLIDE)` per slide**: `title` = slide title, `content` = slide text plus figure descriptions | PLANNED |
-| Locator | `slide` = 1-based presentation order | DEFINED (`Chunk.slide`) |
-| Progress | `progressTotal` = ⌈slides/5⌉ batches | DEFINED (schema comment) |
+| Order | `ppt/presentation.xml` `<p:sldIdLst>` + `ppt/_rels/presentation.xml.rels` (file names are ignored) | unit test with slide files numbered in reverse; matches an independent count on 4 real decks |
+| Text | `<a:t>` runs per paragraph, line breaks, bullet levels; tables → Markdown rows; SmartArt text (diagram data part); speaker notes (notes body placeholder). Slide-number / date / footer placeholders and slide-number fields dropped; XML entities decoded | **4 real decks: 100% of content text runs reach the output (5,061 runs)** |
+| Title | Title/ctrTitle placeholder; else a first line of ≤ 120 chars | real decks without title placeholders get correct titles |
+| Images | Pictures placed on the slide (`r:embed` → slide rels → `ppt/media/*`), with alt text. Skipped: unsupported formats (EMF/WMF/SVG/GIF/TIFF), short side < 32 px (icons), on ≥ 3 slides and > half the deck (logos), > 7 MB, > 14 MB per batch. Unreadable content pictures add `[Figure omitted: …]` (Q18) | unit tests; real decks: 8 + 1 pictures sent |
+| Extract | Batches of **5 slides**: one `generateJson` call with all slide texts, then each picture labelled "Slide N, picture K". Returns per slide `figures[{title, content}]` + `conceptLabels`. Prompt `pptxBatchPrompt(courseName)`, subject-agnostic; cached by file hash + slide numbers + prompt version (`pptx-batch-v1`) + prompt hash | **real:** 40 slides → 8 requests (16,567 tokens); 24 → 5 (5,151); 10 → 2 (1,137); re-runs 0 |
+| Chunk | **One `Chunk(kind=SLIDE)` per slide with content**: `title`, `content` = text, then `[Speaker notes] …`, then `[Figure] title: description` | 40/40, 24/24, 10/10 chunks in slide order |
+| Locator | `slide` = 1-based presentation order | ground-truth facts found on the right slide: 21/21, 15/15, 9/9 |
+| Progress | `progressTotal` = ⌈slides/5⌉ batches | unit + orchestrator test |
+
+**Limitations (real decks):**
+- Diagrams drawn with PowerPoint shapes (no picture) become loose labels with no layout, e.g. page-table and FIFO/LRU trace slides.
+- Charts are not extracted.
+- Notes are verified on synthetic decks only (the real decks' notes are empty).
 
 ### 4.3 Video (VERIFIED, Module 7; real data)
 
 **As built:**
 - The MP4 is uploaded once to the Files API (handle stored on `Source`, reused on retries, deleted after success).
 - It is processed in **equal windows of at most 60 s** (`videoMetadata` start/end offsets, one request each). Times are clip-relative and converted to whole-video seconds.
-- Each window is validated (coverage ≥ 60%), then cached per (file hash, window, prompt `video-v2-windowed`).
+- Each window is validated (coverage ≥ 60%), then cached per (file hash, window, prompt version `video-v3-windowed`, SHA-256 of the prompt). The prompt (`videoPrompt(courseName)`) is subject-agnostic.
+- **Holdout (2026-10-14):** unchanged code on a SYNTHETIC 69.4 s hash-tables video (different subject, window edge inside a slide). Result: 14/14 facts, 5/5 slide cuts, mean start error 0.22 s. The same code on a REAL 3-page C-code PDF: 21/21 facts. Details in PROGRESS.md §4 "Overfitting audit".
 - Segments are clamped, sorted and de-overlapped; a segment cut at a window edge is re-joined.
 - Chunk = transcript + `[On screen] …`, with `tStart`/`tEnd`.
 
@@ -242,5 +249,5 @@ The URL is built client-side with `citationHref()`: `/api/files/{sourceId}#page=
 | Q11 | Video chunk `content` composition | Adopted: `transcript + "\n[On screen] " + onScreen` (implement in Module 7) |
 | Q16 | Embedded text | Adopted: `title + "\n" + content` (Module 8) |
 | Q17 | Restart recovery for `PROCESSING` sources | Adopted: mark stale PROCESSING as FAILED ("interrupted") on boot (Module 5) |
-| Q18 | Unsupported PPTX media (`.emf`/`.wmf`/`.svg`) | Adopted: skip and note `[figure omitted: unsupported format]` (Module 6) |
+| Q18 | Unsupported PPTX media (`.emf`/`.wmf`/`.svg`) | **Implemented (Module 6):** skipped and noted in the chunk as `[Figure omitted: unsupported format (.emf)]`; icons/logos are skipped silently |
 | Q19 | Gemini rate limiting | **Resolved (Module 4.5):** limiter with verified limits, daily ledger, cache |

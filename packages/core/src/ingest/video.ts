@@ -5,12 +5,12 @@
 // and every later timestamp was ~39 s late). A probe on a 60 s window gave ≤ 0.5 s error.
 // Each window's result is validated, then cached (file hash + window + prompt version).
 import { z } from "zod";
-import { writeCache } from "../cache";
+import { sha256, writeCache } from "../cache";
 import { cachedGenerateJson, deleteFile, generateCacheKey, generateJson, modelFor, uploadFile, type UploadedFile } from "../llm";
 import type { ChunkDraft, IngestStats } from "./types";
 
-/** Bump when the prompt, schema or windowing changes: old cache entries then miss. */
-export const VIDEO_PROMPT_VERSION = "video-v2-windowed";
+/** Bump when the schema or windowing changes. (Prompt text changes miss the cache automatically: its hash is in the key.) */
+export const VIDEO_PROMPT_VERSION = "video-v3-windowed";
 
 /** Measured on the real Stage-1 video: ≈91–96 input tokens per second of video. */
 export const VIDEO_TOKENS_PER_SECOND = 96;
@@ -35,7 +35,9 @@ export const VideoSegmentation = z.object({
 });
 export type VideoSegmentation = z.infer<typeof VideoSegmentation>;
 
-export const VIDEO_PROMPT = `You index a clip of an Operating Systems lecture video for a study assistant. Students will ask questions and every answer must cite the exact moment in the video, so timestamps must be accurate.
+/** Subject-agnostic: the course name (Course.name in the DB) is the only context given. */
+export function videoPrompt(courseName: string): string {
+  return `You index a clip of a lecture video for a study assistant. The course is: "${courseName}". Students will ask questions and every answer must cite the exact moment in the video, so timestamps must be accurate.
 
 Split the WHOLE clip, from its first frame to its last, into consecutive segments:
 - Start a new segment whenever the slide or visual changes, or the speaker moves to a new point.
@@ -43,9 +45,10 @@ Split the WHOLE clip, from its first frame to its last, into consecutive segment
 - title: a short heading for the segment (for example the slide title).
 - transcript: what is said during the segment, word for word. Do not summarise. Use "" if nothing is said.
 - onScreen: everything shown that carries information: slide titles, all visible text, table contents, and a precise description of diagrams and illustrations.
-- conceptLabels: 1 to 4 short Operating Systems concepts covered in the segment.
+- conceptLabels: 1 to 4 short concepts covered in the segment.
 
 Use only what is in the clip. Do not add outside knowledge.`;
+}
 
 export type RawSegment = VideoSegmentation["segments"][number];
 export type SegmentReport = { windows: number; returned: number; kept: number; dropped: number; mergedAtEdges: number; coverage: number; longest: number };
@@ -130,6 +133,7 @@ export const MIN_WINDOW_COVERAGE = 0.6;
 export type GeminiFileHandle = { name: string; uri: string; expiresAt: Date | null };
 
 export async function extractVideo(opts: {
+  courseName: string;
   absPath: string;
   fileSha: string;
   durationSec: number;
@@ -141,7 +145,8 @@ export async function extractVideo(opts: {
 }): Promise<{ chunks: ChunkDraft[]; stats: IngestStats; report: SegmentReport }> {
   const windows = videoWindows(opts.durationSec);
   const stats: IngestStats = { units: windows.length + 1, geminiCalls: 0, cached: 0, inputTokens: 0, outputTokens: 0 };
-  const keyOf = ([a, b]: [number, number]) => `video|${VIDEO_PROMPT_VERSION}|${opts.fileSha}|${a}-${b}`;
+  const system = videoPrompt(opts.courseName);
+  const keyOf = ([a, b]: [number, number]) => `video|${VIDEO_PROMPT_VERSION}|${sha256(system).slice(0, 16)}|${opts.fileSha}|${a}-${b}`;
 
   const results: (RawSegment[] | undefined)[] = await Promise.all(
     windows.map(async (w) => (await cachedGenerateJson("strong", VideoSegmentation, keyOf(w)))?.segments),
@@ -166,7 +171,7 @@ export async function extractVideo(opts: {
     const r = await generateJson({
       role: "strong",
       schema: VideoSegmentation,
-      system: VIDEO_PROMPT,
+      system,
       parts: [
         { fileData: { fileUri: file!.uri, mimeType: "video/mp4" }, videoMetadata: { startOffset: offset(from), endOffset: offset(to) } },
         { text: `You are given only a clip of the video: from ${from} s to ${to} s (${(to - from).toFixed(1)} s long). Give tStart and tEnd in seconds relative to the start of this clip (0 = its first frame). Segment all of the clip.` },

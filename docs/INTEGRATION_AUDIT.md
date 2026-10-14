@@ -348,8 +348,8 @@ The aim is a **vertical slice first**, so a real end-to-end demo exists early. P
 | I-12 no Gemini limiter | ⬜ open | Must land before Module 5 (PDF ingestion) |
 | I-13 20-min limit unenforceable | ✅ fixed | ffmpeg-free MP4 `mvhd` parser; 20:00 accepted, 20:01 rejected. **Verified on synthetic MP4s only.** Run a real lecture file through upload when the dataset arrives |
 | I-14 unreliable browser MIME | ✅ fixed | Extension decides the type, content must match (magic bytes + structure); browser MIME ignored |
-| I-15 PPTX EMF/WMF images | ⬜ Module 6 | Decision Q18 adopted |
-| I-16 rebuild wipes mastery | ⬜ Module 9 | Decision Q9 adopted |
+| I-15 PPTX EMF/WMF images | ✅ Module 6 | Skipped with a `[Figure omitted: …]` note in the chunk (Q18); unit-tested. No real deck so far contains EMF/WMF |
+| I-16 rebuild wipes mastery | ✅ Module 9 | 409 unless `force: true` (unit test: refusal leaves data; force cascades it away) |
 | I-17 missing seed | ✅ fixed | `requireCourse()` → 409 `not_ready` "Run `npm run db:seed`" (core test) |
 | I-18 eval refusal consistency | ⬜ Module 10 | |
 | I-19 history lacks masteryUpdates | accepted | |
@@ -396,3 +396,19 @@ The aim is a **vertical slice first**, so a real end-to-end demo exists early. P
 | I-25 model choice | 🟨 | Flash Lite handled the real PDF well (47/47 facts, image-only pages included); video segmentation granularity still to evaluate |
 | New: N-6 | ✅ by design | Ingestion is explicit (`POST /api/sources/[id]/ingest`): uploads and all default tests spend 0 quota (e2e asserts usage unchanged) |
 | New: N-7 | noted | The Round Robin slide (page 9) contains one wrong FIFO cell; extraction reproduces it faithfully. Don't use it as ground truth (data/demo/README.md) |
+
+### 11.6 Overfitting audit (2026-10-14)
+
+| ID | Status | Finding / evidence |
+|---|---|---|
+| N-8 | ✅ fixed | Ingestion prompts contained Stage-1 examples ("CS C372 OPERATING SYSTEMS", "Process state diagram", "running -> waiting: I/O or event wait") and a hardcoded subject. They are now subject-agnostic with the course name injected; the prompt hash is in the cache key |
+| N-9 | ✅ fixed | `UsageLedger` lost updates across processes (dev server + script): a cached copy overwrote the file. It now re-reads before each update with an atomic write; unit test plus a live check |
+| N-10 | ✅ fixed | `SearchRequest.query` cap of 500 chars rejected a real 608-char exam question. Raised to 2,000 (same as `ChatRequest.message`) |
+| N-11 | open | Retrieval on code pages is weak (hit@1 2/5 on the REAL pipes PDF, one chunk per page) |
+| N-12 | open | Title-only chunks are top-1 for 7/16 off-material holdout queries ("hub" chunks) |
+| N-13 | open | Video boundary regression after the prompt fix: 10/11 Stage-1 cuts at ±1.5 s (132.4 s missed, extra 51.4 s) |
+| N-16 | ✅ fixed | `.gitignore` rule `build/` also ignored `apps/web/app/api/build/route.ts` (the route would never be pushed). Scoped to `/build/` |
+| N-17 | open | Course build on demo-course: preemption not named in any topic; nearest-embedding tagging 79% (VM deck 92%); uneven topic sizes |
+| N-15 | open | PPTX diagrams drawn with shapes (not pictures) lose their layout: labels only, no description. Needs slide rendering (LibreOffice, cut) |
+| N-14 | decision | Refusal can't rely on τ: near-miss off-material questions reach 0.707 while answerable ones go as low as 0.650 (holdout). Module 10 must use NOT_COVERED, with τ (0.60) as a floor only |
+| — | evidence | Holdout retrieval (36 new questions): hit@1 95%, MRR 0.97 (random 10%, 0.26). Unchanged code on a REAL different PDF: 21/21 facts. On a SYNTHETIC different video: 14/14 facts, 5/5 cuts. No cross-course leakage |

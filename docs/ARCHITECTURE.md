@@ -261,10 +261,10 @@ Each update writes `Mastery` and a `MasteryEvent(before, after, source)`, which 
 | `POST /api/sources?filename=` | raw file bytes → `UploadResponse` (`PENDING`) | 4 ✅ |
 | `GET /api/sources` | → `SourceView[]` | 4 ✅ |
 | `DELETE /api/sources/[id]` | → `DeleteSourceResponse` (409 while PROCESSING) | 4 ✅ |
-| `POST /api/sources/[id]/ingest` | → `UploadResponse` (`PROCESSING`); PDF only for now | 5 ✅ |
+| `POST /api/sources/[id]/ingest` | → `UploadResponse` (`PROCESSING`); PDF, PPTX and MP4 | 5 ✅ 6 ✅ 7 ✅ |
 | `GET`/`HEAD /api/files/[id]` | → original bytes; Range → 206 / 416 | 4 ✅ |
-| `POST /api/build` | `BuildRequest` → `BuildResponse` | 9 |
-| `GET /api/topics` | → `TopicView[]` | 9 |
+| `POST /api/build` | `BuildRequest` (`courseId?`, `force?`) → `BuildResponse` | 9 ✅ |
+| `GET /api/topics` | `?courseId` → `TopicView[]` | 9 ✅ |
 | `POST /api/chat` | `ChatRequest` → `TutorAnswer` | 10 |
 | `GET /api/chat?learnerId=` | → `ChatMessageView[]` | 10 |
 | `POST /api/eval/answer` | `EvalAnswerRequest` → `EvalAnswerResponse` | 10 |

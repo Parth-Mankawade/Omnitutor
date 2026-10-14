@@ -11,10 +11,10 @@ import { prisma } from "@sc/db";
 import { AppError } from "../src/errors";
 import {
   MAX_TEXT_CHARS, embedText, pageChunks, recoverInterruptedSources, requestIngestion, splitPdf,
-  type ExtractPage, type PdfPageExtraction,
+  type ExtractPage, type ExtractSlides, type PdfPageExtraction,
 } from "../src/ingest/index";
 import { listSources, uploadSource } from "../src/sources";
-import { chunked, makePdf, makePptx } from "../src/testing";
+import { chunked, makeDeck, makePdf, makePng } from "../src/testing";
 
 const TAG = `__test__ingest${Date.now()}`;
 let tempRoot: string;
@@ -132,10 +132,25 @@ describe("requestIngestion / runIngestion (fake Gemini, real DB)", () => {
     assert.ok((await job).ok);
   });
 
-  it("non-PDF and unknown sources are refused", async () => {
-    const deck = (await uploadSource({ body: chunked(await makePptx(2)), filename: `${TAG}-deck.pptx` })).id;
-    await assert.rejects(requestIngestion(deck, fakeDeps().deps), isCode("not_ready", /PPTX ingestion isn.t built yet/));
-    assert.equal((await prisma.source.findUniqueOrThrow({ where: { id: deck } })).status, "PENDING");
+  it("PPTX → READY with one SLIDE chunk per slide, cited by slide number (fake Gemini)", async () => {
+    const bytes = await makeDeck([{ title: "Scheduling", paragraphs: ["Picks the next process"] }, { title: "Gantt", images: [{ name: "gantt.png", bytes: makePng(400, 200) }] }, {}]);
+    const id = (await uploadSource({ body: chunked(bytes), filename: `${TAG}-deck.pptx` })).id;
+    const extractSlides: ExtractSlides = async (slides) => ({
+      extraction: { slides: slides.map((s) => ({ slide: s.slide, figures: s.images.map(() => ({ title: "Gantt chart", content: "P1 0-2" })), conceptLabels: ["scheduling"] })) },
+      cached: false,
+      usage: { inputTokens: 900, outputTokens: 90 },
+    });
+    const result = await (await requestIngestion(id, { extractSlides, embed: fakeDeps().deps.embed })).job;
+    assert.ok(result.ok && result.deck);
+    assert.deepEqual(result.deck.emptySlides, [3]);
+    const source = await prisma.source.findUniqueOrThrow({ where: { id }, include: { chunks: { orderBy: { seq: "asc" } } } });
+    assert.equal(source.status, "READY");
+    assert.deepEqual([source.progressDone, source.progressTotal], [1, 1]);
+    assert.deepEqual(source.chunks.map((c) => [c.kind, c.slide, c.page, c.title]), [["SLIDE", 1, null, "Scheduling"], ["SLIDE", 2, null, "Gantt"]]);
+    assert.equal(source.chunks[1].content, "[Figure] Gantt chart: P1 0-2");
+  });
+
+  it("unknown sources are refused", async () => {
     await assert.rejects(requestIngestion("no-such-source", fakeDeps().deps), isCode("not_found"));
   });
 });

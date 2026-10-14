@@ -14,6 +14,11 @@ The files in this folder are gitignored (large, third-party material). Only this
 | `video/cpu-scheduling-2min.mp4` | Animated CPU-scheduling explainer with narration (not a recorded lecture) | ✅ 154.16 s, H.264 640×360 30 fps + AAC stereo, audio throughout | `5e3d3e8044000656` | Stage 3 (video ingestion) |
 | `papers/*.pdf` (7) | IIIT Nagpur CSL 207 / CSL 203 Operating Systems sessional + end-semester papers (phone photos) | ✅ valid PDFs, 1–4 pages | — | **Evaluation only, never upload** |
 | `testset.stage1.json` | Stage-1 evaluation questions (from the papers + material) with expected locations | `TestSet` schema ✅ | — | Retrieval / tutor evaluation (Modules 8, 10, 15) |
+| `testset.holdout.json` | **Holdout** (overfitting audit): 36 questions written after retrieval was frozen. 4 verbatim exam questions (partial coverage), 16 new answerable, 16 off-material (unrelated / same course / near-miss) | `TestSet` schema ✅ | `a7d488da8fc8fb73` | Retrieval holdout (`npm run holdout:retrieval`) |
+| `holdout/pipes-c-program.pdf` | **REAL** lab handout (copy of `C:\dev\data\pdfs\C program on PIPES.pdf`): 3 A4 pages of C code | ✅ 3 pages | `20ac71c1418bb1f4` | Generalization holdout, course `holdout-pipes` |
+| `pptx/os-module5-virtual-memory.pptx` | **REAL** lecture deck (copy of `C:\dev\data\pdfs\OS Module 5 Virtual Memory and File Management (1).pptx`): 40 slides, 8 pictures, no title placeholders | ✅ 40 slides | `8ab5040b010963e9` | Module 6 check, course `pptx-vm` |
+| `pptx/lab2-file-system-calls.pptx` | **REAL** lab deck (copy of `C:\dev\data\OS_LAB_mohit\day1-Lab2__File_System_Calls.pptx`): 24 slides, code-heavy, 1 picture | ✅ 24 slides | `cc1bc21fa05f05a8` | Module 6 check, course `pptx-lab2` |
+| `holdout/hash-tables-synthetic.mp4` | **SYNTHETIC** (built for the audit): 6 rendered slides + Windows TTS narration, 69.43 s, 1280×720. NOT a real lecture | ✅ | `c9d7780173034f0f` | Generalization holdout, course `holdout-hash` |
 
 Smoke-test sample (separate file): `tools/smoke/fixtures/sample.mp4`, 45 s cut from the video at 25.8–70.8 s (lossless stream copy), SHA-256 `fdbf7d0e8bcfaa4d`.
 

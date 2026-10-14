@@ -43,4 +43,4 @@ export async function writeCache(ns: string, key: string, value: unknown): Promi
   await rename(tmp, file);
 }
 
-export { sha256 };
+export { sha256 }; // also used to put prompt hashes into cache keys

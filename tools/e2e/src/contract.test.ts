@@ -17,6 +17,7 @@ describe(`registry vs ${BASE_URL}`, () => {
   it("read-only live endpoints return contract-valid data", async () => {
     assert.ok(Array.isArray(await api.listLearners()));
     assert.ok(Array.isArray(await api.listSources()));
+    assert.ok(Array.isArray(await api.listTopics()));
   });
   const planned = (Object.keys(endpoints) as EndpointName[]).filter((n) => endpoints[n].status === "planned");
   for (const name of planned) {
@@ -30,7 +31,7 @@ describe(`registry vs ${BASE_URL}`, () => {
   it("client maps a missing route to ApiError(http_error, 404)", async () => {
     const { createApiClient } = await import("@sc/client");
     const live = createApiClient({ mode: "live", baseUrl: BASE_URL });
-    await assert.rejects(live.listTopics(), (e: unknown) => e instanceof ApiError && e.code === "http_error" && e.status === 404);
+    await assert.rejects(live.mastery("demo-learner"), (e: unknown) => e instanceof ApiError && e.code === "http_error" && e.status === 404);
   });
   it("live routes answer wrong methods with 405", async () => {
     assert.equal((await raw("/api/learners", { method: "DELETE" })).status, 405);

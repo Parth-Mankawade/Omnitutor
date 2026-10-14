@@ -42,7 +42,8 @@ Model IDs come from env (`LLM_MODEL_FAST`, `LLM_MODEL_STRONG`, `EMBED_MODEL`) �
 
 ## Rules for Gemini usage (quota is the user's top concern)
 - Every Gemini call goes through `packages/core/src/llm.ts` (`generateJson`, `embed`, `uploadFile`), never the SDK directly. These pass the limiter (`limiter.ts`) and record usage in `data/cache/usage.json`.
-- Deterministic calls (ingestion) pass a `cacheKey` built from the file hash, location and a prompt version. **Bump the prompt version constant (e.g. `PDF_PROMPT_VERSION`) whenever the prompt or schema changes.**
+- Deterministic calls (ingestion) pass a `cacheKey` built from the file hash, location, a version constant and the SHA-256 of the prompt text (prompt edits miss the cache automatically). **Bump the version constant (e.g. `PDF_PROMPT_VERSION`) when the schema or chunking changes.**
+- **Prompts stay subject-agnostic:** never copy examples, names or wording from the test data into a prompt. The only context is the course name from the DB. (Overfitting audit, docs/PROGRESS.md §4.)
 - Uploads never call Gemini; only `POST /api/sources/[id]/ingest` does. Tests use injected fakes (`IngestDeps`); real-data runs are opt-in scripts (`npm run stage1:pdf`). Report Gemini requests/tokens spent after any real run.
 
 ## Rules for API routes (enforced by tests)
@@ -117,6 +118,9 @@ OS CPU scheduling: 1 NPTEL/OCW lecture (15–20 min), 1 textbook chapter (20–3
 - [x] Module 5: PDF ingestion via `POST /api/sources/[id]/ingest`. Real PDF: 47/47 facts, 9 requests, re-run free
 - [x] Module 7: video ingestion in ≤60 s windows (`videoMetadata` offsets). Real video: 12/12 facts at true time, mean error 0.3 s
 - [x] Module 8: retrieval + `POST /api/search`. Real test set: hit@6 100%, MRR 0.95. REFUSAL_TAU 0.55 is too low; scores overlap, so the tutor must use NOT_COVERED
-- [ ] Next: Module 6 (PPTX, needs a real deck), Module 9 (course build), Module 10 (tutor)
-- Real-data checks (spend quota only when inputs or prompts change; cached otherwise): `npm run stage1:pdf`, `npm run stage1:video`, `npm run stage1:retrieval`
+- [x] Overfitting audit: prompt contamination removed. Holdout retrieval (36 new questions): hit@1 95%. Unchanged code on a REAL different PDF (21/21) and a SYNTHETIC different video (14/14, 5/5 cuts). Ledger multi-process bug and search query cap fixed. Open: code-page retrieval, title-chunk hubs, video boundary regression
+- [x] Module 6: PPTX ingestion (exact XML text + Gemini figure descriptions per 5 slides). Real decks: 21/21, 15/15, 9/9 facts; parser keeps 100% of content text on 4 real decks. Limitation: shape-drawn diagrams lose layout
+- [x] Module 9: course build (`POST /api/build`, `GET /api/topics`, Q9 409 unless force). Pre-registered real checks: VM deck 18/18, demo-course 19/21 (preemption not a named topic; tagging 79% < 80%)
+- [ ] Next: Module 10 (tutor)
+- Real-data checks (spend quota only when inputs or prompts change; cached otherwise): `npm run stage1:pdf`, `npm run stage1:video`, `npm run stage1:retrieval`, `npm run holdout:retrieval`, `npm run holdout:generalize`, `npm run stage1:pptx`, `npm run stage1:build`
 - [ ] Everything else

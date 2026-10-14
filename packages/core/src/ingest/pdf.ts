@@ -2,11 +2,12 @@
 // + prompt version) → text / figure / table blocks → chunks that each cite exactly one page.
 import { PDFDocument } from "pdf-lib";
 import { z } from "zod";
+import { sha256 } from "../cache";
 import { generateJson, type Usage } from "../llm";
 import type { ChunkDraft, IngestStats } from "./types";
 
-/** Bump when the prompt or schema changes: old cache entries then miss. */
-export const PDF_PROMPT_VERSION = "pdf-page-v1";
+/** Bump when the schema or chunking contract changes. (Prompt text changes miss the cache automatically: its hash is in the key.) */
+export const PDF_PROMPT_VERSION = "pdf-page-v2";
 
 export const PdfPageExtraction = z.object({
   blocks: z.array(
@@ -20,20 +21,23 @@ export const PdfPageExtraction = z.object({
 });
 export type PdfPageExtraction = z.infer<typeof PdfPageExtraction>;
 
-export const PDF_PAGE_PROMPT = `You extract ONE page of Operating Systems course material for a study assistant's knowledge base. Students will ask questions and every answer must cite this page, so be complete and faithful.
+/** Subject-agnostic: the course name (Course.name in the DB) is the only context given. */
+export function pdfPagePrompt(courseName: string): string {
+  return `You extract ONE page of course material for a study assistant's knowledge base. The course is: "${courseName}". Students will ask questions and every answer must cite this page, so be complete and faithful.
 
 Return JSON:
 - blocks: the page content in reading order.
   - kind "text": a heading, paragraph or bullet group. title = its heading if it has one, else "". content = the text copied faithfully (only rejoin words split across lines; keep formulas, symbols and numbers exactly). Write bullets on separate lines starting with "- ".
-  - kind "figure": EVERY diagram, chart, graph, timeline, Gantt chart, screenshot or picture that carries information. title = its caption or a short name (e.g. "Process state diagram"). content = a precise description that lets a student answer questions without seeing it: every label and value, every arrow or transition with its label (e.g. "running -> waiting: I/O or event wait"), axes with units, the order of blocks in a timeline, and what the figure illustrates.
+  - kind "figure": EVERY diagram, chart, graph, timeline, screenshot or picture that carries information. title = its caption or a short descriptive name. content = a precise description that lets a student answer questions without seeing it: every label and value, every arrow or connection with its label, axes with units, the order of elements in a sequence or timeline, and what the figure illustrates.
   - kind "table": a table as Markdown rows, keeping every cell value.
-- conceptLabels: 2 to 6 short noun phrases naming the key Operating Systems concepts on this page.
+- conceptLabels: 2 to 6 short noun phrases naming the key concepts on this page.
 
 Rules:
 - If the page is a picture of a slide, transcribe its text as text blocks and describe its diagrams as figure blocks.
-- Skip decoration and boilerplate: logos, page numbers, repeated course headers or footers (such as "CS C372 OPERATING SYSTEMS").
+- Skip decoration and boilerplate: logos, page numbers, and headers or footers that only repeat a course code, title or institution name.
 - Use only what is on the page. Do not add outside knowledge, explanations or corrections.
 - A page that only has a title yields one text block containing the title.`;
+}
 
 const at = (page: number) => ({ page, slide: null, tStart: null, tEnd: null });
 
@@ -89,16 +93,17 @@ export async function splitPdf(bytes: Uint8Array): Promise<Uint8Array[]> {
 }
 
 export type PageResult = { extraction: PdfPageExtraction; cached: boolean; usage: Usage };
-export type ExtractPage = (pageBytes: Uint8Array, ctx: { fileSha: string; pageIndex: number }) => Promise<PageResult>;
+export type ExtractPage = (pageBytes: Uint8Array, ctx: { fileSha: string; pageIndex: number; courseName: string }) => Promise<PageResult>;
 
 /** Default page extractor: one structured Gemini call, cached per (file hash, page, prompt version). */
-export const extractPdfPage: ExtractPage = async (pageBytes, { fileSha, pageIndex }) => {
+export const extractPdfPage: ExtractPage = async (pageBytes, { fileSha, pageIndex, courseName }) => {
+  const system = pdfPagePrompt(courseName);
   const r = await generateJson({
     role: "fast",
     schema: PdfPageExtraction,
-    system: PDF_PAGE_PROMPT,
+    system,
     parts: [{ inlineData: { mimeType: "application/pdf", data: Buffer.from(pageBytes).toString("base64") } }, { text: "Extract this page." }],
-    cacheKey: `pdf-page|${PDF_PROMPT_VERSION}|${fileSha}|${pageIndex}`,
+    cacheKey: `pdf-page|${PDF_PROMPT_VERSION}|${sha256(system).slice(0, 16)}|${fileSha}|${pageIndex}`,
   });
   return { extraction: r.data, cached: r.cached, usage: r.usage };
 };
@@ -110,7 +115,7 @@ export const extractPdfPage: ExtractPage = async (pageBytes, { fileSha, pageInde
 export async function extractPdf(
   bytes: Uint8Array,
   fileSha: string,
-  opts: { extractPage?: ExtractPage; onPageDone?: () => Promise<void> | void; concurrency?: number } = {},
+  opts: { courseName: string; extractPage?: ExtractPage; onPageDone?: () => Promise<void> | void; concurrency?: number },
 ): Promise<{ chunks: ChunkDraft[]; stats: IngestStats }> {
   const extract = opts.extractPage ?? extractPdfPage;
   const pages = await splitPdf(bytes);
@@ -121,7 +126,7 @@ export async function extractPdf(
     while (!failed && next < pages.length) {
       const i = next++;
       try {
-        results[i] = await extract(pages[i], { fileSha, pageIndex: i });
+        results[i] = await extract(pages[i], { fileSha, pageIndex: i, courseName: opts.courseName });
       } catch (e) {
         failed = true;
         const msg = e instanceof Error ? e.message.replace(/^\[llm:\w+\] /, "") : String(e);

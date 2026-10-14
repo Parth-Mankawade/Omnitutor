@@ -42,7 +42,7 @@ describe("modes", () => {
     const api = createApiClient({ mode: "auto", fetch: f.fn });
     for (const name of Object.keys(endpoints) as EndpointName[]) assert.equal(api.isLive(name), endpoints[name].status === "live", name);
     await api.listSources(); // live
-    await api.buildCourse(); // planned → mock
+    await api.mastery("demo-learner"); // planned (Module 14) → mock
     assert.equal(f.calls.length, 1);
     assert.equal(f.calls[0].url, "/api/sources");
   });

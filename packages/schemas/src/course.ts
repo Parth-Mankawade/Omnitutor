@@ -62,8 +62,16 @@ export const TopicView = z.object({
 });
 export type TopicView = z.infer<typeof TopicView>;
 
-export const BuildRequest = z.object({ courseId: Id.optional() });
+/**
+ * POST /api/build. Rebuilding replaces the course's topics, which erases learner progress on them
+ * (mastery, quiz questions). If any exists, the build is refused (409) unless `force` is true (decision Q9).
+ */
+export const BuildRequest = z.object({ courseId: Id.optional(), force: z.boolean().optional() });
 export type BuildRequest = z.infer<typeof BuildRequest>;
+
+/** Query for course-scoped GETs (?courseId=…); omitted = the default course. */
+export const CourseQuery = z.object({ courseId: Id.optional() });
+export type CourseQuery = z.infer<typeof CourseQuery>;
 
 export const BuildResponse = z.object({ topics: z.array(TopicView) });
 export type BuildResponse = z.infer<typeof BuildResponse>;

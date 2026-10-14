@@ -24,7 +24,7 @@ describe("paths agree with the registry", () => {
     ingestSource: paths.ingestSource("src-1"),
     search: paths.search(),
     buildCourse: paths.build(),
-    listTopics: paths.topics(),
+    listTopics: paths.topics("pptx-vm"),
     chat: paths.chat(),
     chatHistory: paths.chatHistory("demo learner"),
     evalAnswer: paths.evalAnswer(),

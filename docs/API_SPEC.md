@@ -126,8 +126,8 @@ Examples `[mock]` (`citations` in `mocks.ts`):
 | E5 | GET | `/api/sources` | `paths.sources()` | ✅ | 4 | — | `SourceView[]` |
 | E17 | DELETE | `/api/sources/[id]` | `paths.source(id)` | ✅ | 4 | — | `DeleteSourceResponse` |
 | E6 | GET, HEAD | `/api/files/[id]` | `paths.file(id)` / `citationHref(c)` | ✅ | 4 | `Range` header | file bytes (200 / 206 / 416) |
-| E7 | POST | `/api/build` | `paths.build()` | 📄 | 9 | `BuildRequest` | `BuildResponse` |
-| E8 | GET | `/api/topics` | `paths.topics()` | 📄 | 9 | — | `TopicView[]` |
+| E7 | POST | `/api/build` | `paths.build()` | ✅ | 9 | `BuildRequest` | `BuildResponse` |
+| E8 | GET | `/api/topics` | `paths.topics(courseId?)` | ✅ | 9 | query `CourseQuery` | `TopicView[]` |
 | E9 | POST | `/api/chat` | `paths.chat()` | 📄 | 10 (+11) | `ChatRequest` | `TutorAnswer` |
 | E10 | GET | `/api/chat` | `paths.chatHistory(learnerId)` | 📄 | 10 | query `LearnerQuery` | `ChatMessageView[]` |
 | E11 | POST | `/api/eval/answer` | `paths.evalAnswer()` | 📄 | 10 | `EvalAnswerRequest` | `EvalAnswerResponse` |
@@ -143,7 +143,7 @@ Examples `[mock]` (`citations` in `mocks.ts`):
 Registry: `packages/schemas/src/endpoints.ts`, with 18 JSON endpoints (E1–E5, E7–E18, E20) plus `NON_JSON_ROUTES.file` (E6).
 
 ### E20. `POST /api/search`: ✅ LIVE (Module 8)
-- **Body:** `SearchRequest = { query: string (1–500, trimmed), k?: 1–20 (default 6), courseId? }`.
+- **Body:** `SearchRequest = { query: string (1–2000, trimmed; same cap as a tutor message), k?: 1–20 (default 6), courseId? }`.
 - **Response 200:** `SearchResponse = { topScore, candidates, results: [{ score, citation: Citation }] }`. `score` is cosine similarity over all READY sources (PDF and video together). Citations follow §1.2 (PDF `page`, VIDEO `tStart`/`tEnd`, excerpt ≤ 600 chars).
 - **Cost:** 1 embedding request per new query; repeats are cached (verified: +0).
 - **Errors:** 400 invalid body · 409 `not_ready` if nothing is ingested yet.
@@ -234,7 +234,6 @@ Registry: `packages/schemas/src/endpoints.ts`, with 18 JSON endpoints (E1–E5, 
 |---|---|---|
 | 404 | `not_found` | unknown id |
 | 409 | `not_ready` | already processing |
-| 409 | `not_ready` | PPTX (`PPTX ingestion isn't built yet …`); the file stays `PENDING`. PDF and VIDEO are supported |
 | 409 | `not_ready` | seed missing |
 
   Gemini quota problems don't fail the request: they surface as `FAILED` with a readable `error` (e.g. "Daily generate budget reached …").
@@ -266,16 +265,18 @@ Registry: `packages/schemas/src/endpoints.ts`, with 18 JSON endpoints (E1–E5, 
 - **Production:** with `Accept-Encoding: gzip, br`, responses are **never compressed** (verified on `next start`), so byte offsets stay valid.
 - **Errors:** unknown id, or row present but file missing → 404 `ApiErrorBody`.
 
-### E7. `POST /api/build`: 📄 PLANNED (Module 9)
-- **Body:** `BuildRequest = { courseId?: Id }`, so `{}` is valid.
-- **Behaviour:** one LLM call produces 5–8 topics with prerequisites, then each chunk is tagged to its nearest topic by embedding.
+### E7. `POST /api/build`: ✅ LIVE (Module 9)
+- **Body:** `BuildRequest = { courseId?: Id, force?: boolean }`, so `{}` is valid.
+- **Behaviour:** one LLM call over all READY chunks (non-READY sources are ignored) produces 5–8 topics with prerequisites; each chunk is tagged to its nearest topic by embedding. Synchronous (a few seconds).
+- **Cost:** 1 generate request + 1 embedding request per topic. A rebuild over unchanged chunks is free (cache).
 - **Response 200:** `BuildResponse = { topics: TopicView[] }`. For `TopicView`, see E8.
-- **Errors (proposed):** 409 `not_ready` (any source not READY, or no sources) · 429 / 502 LLM errors.
-- ⚠ **Rebuilding deletes all `Topic` rows, which cascades to `Mastery`, `MasteryEvent` and `Question` for those topics** (`schema.prisma` delete rules). Decision Q9: 409 unless forced; the UI warns.
+- **Errors:** 400 `bad_request` (invalid body) · 409 `not_ready` (course not found; nothing ingested; learner progress exists and `force` is not true) · LLM errors.
+- ⚠ **Rebuilding deletes all `Topic` rows, which cascades to `Mastery`, `MasteryEvent` and `Question` for those topics** (`schema.prisma` delete rules). Decision Q9 implemented: 409 unless `force: true`; the UI should warn.
 - **DB:** `Topic` (delete + insert), `Chunk.topicId` (update).
 
-### E8. `GET /api/topics`: 📄 PLANNED (Module 9)
-- **Response 200:** `TopicView[]` ordered by `seq`.
+### E8. `GET /api/topics`: ✅ LIVE (Module 9)
+- **Query:** `CourseQuery = { courseId?: Id }` (omitted = default course). Unknown course → 409 `not_ready`.
+- **Response 200:** `TopicView[]` ordered by `seq` (1-based, prerequisites first).
 
 | Field | Type | Notes |
 |---|---|---|
@@ -291,7 +292,7 @@ Registry: `packages/schemas/src/endpoints.ts`, with 18 JSON endpoints (E1–E5, 
 [ { "id": "t-fcfs", "seq": 2, "name": "FCFS scheduling", "description": "First-come first-served; the convoy effect.", "prereqIds": ["t-crit"], "chunkCount": 9 },
   { "id": "t-rr", "seq": 4, "name": "Round Robin", "description": "Time-sliced scheduling; choosing the time quantum.", "prereqIds": ["t-fcfs"], "chunkCount": 10 } ]
 ```
-- Returns `[]` before the course is built (proposed).
+- Returns `[]` before the course is built.
 
 ### E9. `POST /api/chat`: 📄 PLANNED (Module 10; mastery update needs Module 11)
 - **Body:** `ChatRequest = { learnerId: Id, courseId?: Id, message: string }`. `message` is trimmed, length 1–2000.
@@ -525,7 +526,7 @@ Cold start `[mock]` (`mockStates.newLearnerMastery`): `needsDiagnostic: true`, e
 | Q6 | Tutor turns | Single-turn (decide finally in Module 10) |
 | Q7 | Weak topics | `band === "weak"`, lowest `p` first, ≤ 3 citations |
 | Q8 | MasteryEvent granularity | **One per answered question / chat turn** (mocks updated) |
-| Q9 | Rebuild with learner data | 409 unless forced (Module 9) |
+| Q9 | Rebuild with learner data | **Implemented (Module 9):** 409 unless `force: true` |
 | Q10 | Excerpt length | ≤ 600 chars, truncated server-side (Module 10) |
 | Q11 | Video chunk content | `transcript + "\n[On screen] " + onScreen` (Module 7) |
 | Q12 | `count` for DIAGNOSTIC/MOCK | Ignored |
@@ -534,5 +535,5 @@ Cold start `[mock]` (`mockStates.newLearnerMastery`): `needsDiagnostic: true`, e
 | Q15 | Unknown `learnerId` | 404 `not_found` (`requireLearner()` implemented) |
 | Q16 | Embedded text | `title + "\n" + content` (Module 8) |
 | Q17 | Restart recovery | **Implemented:** `instrumentation.ts` marks PROCESSING rows with no progress for 2 min as FAILED |
-| Q18 | Unsupported PPTX images | Skip, with a note in the slide content (Module 6) |
+| Q18 | Unsupported PPTX images | **Implemented (Module 6):** skipped, noted in the slide's chunk as `[Figure omitted: …]` |
 | Q19 | Gemini limiter values | **Implemented:** verified free tier (15/250K/500; 100/30K/1K), enforced below it (12/200K/450; 80/24K/900), env-overridable |

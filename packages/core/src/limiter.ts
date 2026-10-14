@@ -5,7 +5,7 @@
 //   - requests per day (RPD), counted per Pacific-time day in data/cache/usage.json
 // Embedding requests count once PER TEXT (verified on the AI Studio dashboard: 4 texts
 // in 2 calls showed as 4 requests). Defaults sit below the verified limits; override via env.
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { LlmError } from "./errors";
 import { repoRoot } from "./storage";
@@ -43,9 +43,13 @@ export type KindUsage = { requests: number; inputTokens: number };
 export type DayUsage = { day: string; generate: KindUsage; embed: KindUsage };
 type LedgerFile = { days: Record<string, Omit<DayUsage, "day">> };
 
-/** Per-day request/token counts, persisted so restarts don't reset the daily budget. Keeps 14 days. */
+/**
+ * Per-day request/token counts, persisted so restarts don't reset the daily budget. Keeps 14 days.
+ * The file is re-read before every update: the dev server and scripts that call Gemini through
+ * @sc/core share it, and a cached copy would overwrite the other process's counts.
+ */
 export class UsageLedger {
-  private data: LedgerFile | null = null;
+  private memory: LedgerFile = { days: {} };
 
   constructor(
     private file: string | null,
@@ -53,33 +57,40 @@ export class UsageLedger {
   ) {}
 
   private load(): LedgerFile {
-    if (this.data) return this.data;
+    if (!this.file) return this.memory;
     try {
-      this.data = this.file ? (JSON.parse(readFileSync(this.file, "utf8")) as LedgerFile) : { days: {} };
+      return JSON.parse(readFileSync(this.file, "utf8")) as LedgerFile;
     } catch {
-      this.data = { days: {} };
+      return { days: {} };
     }
-    return this.data;
   }
 
-  private save() {
-    if (!this.file || !this.data) return;
-    const days = Object.keys(this.data.days).sort().slice(-14);
-    this.data.days = Object.fromEntries(days.map((d) => [d, this.data!.days[d]]));
+  private save(data: LedgerFile) {
+    if (!this.file) return;
+    const days = Object.keys(data.days).sort().slice(-14);
+    data.days = Object.fromEntries(days.map((d) => [d, data.days[d]]));
     mkdirSync(path.dirname(this.file), { recursive: true });
-    writeFileSync(this.file, JSON.stringify(this.data, null, 2));
+    const json = JSON.stringify(data, null, 2);
+    const tmp = `${this.file}.${process.pid}.tmp`;
+    writeFileSync(tmp, json);
+    try {
+      renameSync(tmp, this.file); // atomic: a concurrent reader never sees half a file
+    } catch {
+      writeFileSync(this.file, json); // Windows can refuse the rename while another process reads the file
+      rmSync(tmp, { force: true });
+    }
   }
 
-  private bucket(kind: LimitKind): KindUsage {
-    const days = this.load().days;
+  private bucket(data: LedgerFile, kind: LimitKind): KindUsage {
     const day = pacificDay(this.now());
-    days[day] ??= { generate: { requests: 0, inputTokens: 0 }, embed: { requests: 0, inputTokens: 0 } };
-    return days[day][kind];
+    data.days[day] ??= { generate: { requests: 0, inputTokens: 0 }, embed: { requests: 0, inputTokens: 0 } };
+    return data.days[day][kind];
   }
 
   /** Counts `requests` against today's budget, or throws (rate_limit) if it would exceed `rpd`. */
   reserve(kind: LimitKind, requests: number, rpd: number): void {
-    const b = this.bucket(kind);
+    const data = this.load();
+    const b = this.bucket(data, kind);
     if (b.requests + requests > rpd) {
       throw new LlmError(
         "rate_limit",
@@ -88,16 +99,18 @@ export class UsageLedger {
       );
     }
     b.requests += requests;
-    this.save();
+    this.save(data);
   }
 
   addTokens(kind: LimitKind, tokens: number): void {
-    this.bucket(kind).inputTokens += Math.max(0, Math.round(tokens));
-    this.save();
+    const data = this.load();
+    this.bucket(data, kind).inputTokens += Math.max(0, Math.round(tokens));
+    this.save(data);
   }
 
   today(): DayUsage {
-    return { day: pacificDay(this.now()), generate: { ...this.bucket("generate") }, embed: { ...this.bucket("embed") } };
+    const data = this.load();
+    return { day: pacificDay(this.now()), generate: { ...this.bucket(data, "generate") }, embed: { ...this.bucket(data, "embed") } };
   }
 }
 
