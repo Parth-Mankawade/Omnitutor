@@ -8,7 +8,7 @@ import { prisma } from "@sc/db";
 import type { TopicView } from "@sc/schemas";
 import { sha256 } from "./cache";
 import { requireCourse } from "./course";
-import { notReady } from "./errors";
+import { AppError, notReady } from "./errors";
 import { embed as geminiEmbed, generateJson, type EmbedTask, type Usage } from "./llm";
 import { cosine, toCitation } from "./retrieve";
 
@@ -201,7 +201,7 @@ export async function buildCourse(input: { courseId?: string; force?: boolean } 
     ? await deps.plan({ system, outline, cacheKey })
     : await generateJson({ role: "strong", schema: TopicPlan, system, parts: [{ text: outline }], cacheKey });
   const { topics, droppedPrereqs } = orderTopics(plan.data);
-  if (topics.length === 0) throw new Error("The model returned no usable topics.");
+  if (topics.length === 0) throw new AppError("llm_error", "The model returned no usable topics; try the build again.");
 
   // Topic text acts as the query, chunks as documents (the same asymmetry as retrieval).
   const topicVectors = await (deps.embed ?? geminiEmbed)(topics.map((t) => `${t.name}\n${t.description}`), "RETRIEVAL_QUERY");

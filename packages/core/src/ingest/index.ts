@@ -3,6 +3,7 @@
 import { readFile } from "node:fs/promises";
 import { prisma, type Source } from "@sc/db";
 import type { UploadResponse } from "@sc/schemas";
+import { nearestTopic } from "../build";
 import { sha256File } from "../cache";
 import { AppError, LlmError, notFound, notReady } from "../errors";
 import { embed as geminiEmbed, type EmbedTask } from "../llm";
@@ -51,7 +52,7 @@ export async function requestIngestion(sourceId: string, deps: IngestDeps = {}):
   const source = await prisma.source.findUnique({ where: { id: sourceId } });
   if (!source) throw notFound(`Source "${sourceId}" not found.`);
   if (!SUPPORTED.includes(source.type)) {
-    throw notReady(`${source.type} ingestion isn't built yet (PDF and video for now). The file is stored and can be processed once it is.`);
+    throw notReady(`${source.type} files can't be ingested.`);
   }
   const stale = Date.now() - source.updatedAt.getTime() > STALE_MS;
   if (running.has(sourceId) || (source.status === "PROCESSING" && !stale)) {
@@ -110,9 +111,15 @@ export async function runIngestion(sourceId: string, deps: IngestDeps = {}): Pro
     const vectors = await embed(chunks.map(embedText), "RETRIEVAL_DOCUMENT");
     if (vectors.length !== chunks.length) throw new Error(`Embedding returned ${vectors.length} vectors for ${chunks.length} chunks.`);
 
+    // Keep the course's topic structure: once topics exist, new or re-ingested chunks join their nearest
+    // topic by the stored topic vectors (the course build's rule; no Gemini call). Rebuild for new topics.
+    const topics = await prisma.topic.findMany({ where: { courseId: source.courseId }, orderBy: { seq: "asc" }, select: { id: true, embedding: true } });
+    const comparable = topics.filter((t) => t.embedding.length > 0 && t.embedding.length === vectors[0]?.length);
+    const topicOf = comparable.length ? nearestTopic(vectors, comparable.map((t) => t.embedding)).map((i) => comparable[i].id) : [];
+
     await prisma.$transaction([
       prisma.chunk.deleteMany({ where: { sourceId } }),
-      prisma.chunk.createMany({ data: chunks.map((c, seq) => ({ sourceId, seq, ...c, embedding: vectors[seq] })) }),
+      prisma.chunk.createMany({ data: chunks.map((c, seq) => ({ sourceId, seq, ...c, embedding: vectors[seq], topicId: topicOf[seq] ?? null })) }),
       prisma.source.update({ where: { id: sourceId }, data: { status: "READY", error: null, progressDone: stats.units, progressTotal: stats.units } }),
     ]);
     console.info(`[ingest] ${sourceId} (${source.type}): READY, ${chunks.length} chunks · ${stats.geminiCalls} Gemini calls, ${stats.cached} cached, ${stats.inputTokens} input tokens`);

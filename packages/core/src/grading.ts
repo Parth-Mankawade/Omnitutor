@@ -18,6 +18,8 @@ import { toCitation } from "./retrieve";
 export const SHORT_PASS = 0.6;
 /** Revisit list length in the report. */
 export const MAX_REVISIT = 6;
+/** A grading claim older than this (the server stopped mid-grading) may be taken over by a new submit. */
+export const GRADING_CLAIM_MS = 5 * 60_000;
 
 type Answer = { index?: number; value?: number; unit?: string; reference?: string; keyPoints?: string[] };
 
@@ -70,7 +72,8 @@ export async function submitQuiz(assessmentId: string, req: SubmitRequest): Prom
     if (r.response.type !== q.type) throw badRequest(`Question ${(q.position ?? 0) + 1} is ${q.type}; got a ${r.response.type} response.`);
     if (q.type === "MCQ" && r.response.type === "MCQ" && r.response.index >= (q.options as string[]).length) throw badRequest(`Question ${(q.position ?? 0) + 1} has no option ${r.response.index}.`);
   }
-  const responseOf = new Map(req.responses.map((r) => [r.questionId, r.response]));
+  // A blank SHORT answer is an unanswered question.
+  const responseOf = new Map(req.responses.filter((r) => r.response.type !== "SHORT" || r.response.text.trim()).map((r) => [r.questionId, r.response]));
 
   // Source excerpts of every question (for SHORT grading and cited feedback).
   const chunkIds = [...new Set(a.questions.flatMap((q) => q.sourceChunkIds))];
@@ -102,14 +105,27 @@ export async function submitQuiz(assessmentId: string, req: SubmitRequest): Prom
     }
     return out;
   };
-  if (shortAnswered.length) {
-    for (const [id, g] of await grade(shortAnswered)) shortGrade.set(id, g);
-    // Anything the batch didn't provably grade is re-graded alone (no other answer to confuse it with).
-    for (const q of shortAnswered.filter((x) => !shortGrade.has(x.id))) {
-      const g = (await grade([q])).get(q.id);
-      if (g) shortGrade.set(q.id, g);
-      console.warn(`[grade] SHORT ${q.id}: batch grade misaligned or missing; re-graded alone${g ? "" : " (failed)"}`);
+  // Claim the quiz atomically (submittedAt set while still IN_PROGRESS = being graded), so concurrent
+  // submits (double click, two tabs) can't grade it twice and apply every mastery update twice.
+  const claim = await prisma.assessment.updateMany({
+    where: { id: a.id, status: "IN_PROGRESS", OR: [{ submittedAt: null }, { submittedAt: { lt: new Date(Date.now() - GRADING_CLAIM_MS) } }] },
+    data: { submittedAt: new Date() },
+  });
+  if (claim.count === 0) throw notReady("This quiz is already being graded or was submitted; open its report.");
+  try {
+    if (shortAnswered.length) {
+      for (const [id, g] of await grade(shortAnswered)) shortGrade.set(id, g);
+      // Anything the batch didn't provably grade is re-graded alone (no other answer to confuse it with).
+      for (const q of shortAnswered.filter((x) => !shortGrade.has(x.id))) {
+        const g = (await grade([q])).get(q.id);
+        if (g) shortGrade.set(q.id, g);
+        console.warn(`[grade] SHORT ${q.id}: batch grade misaligned or missing; re-graded alone${g ? "" : " (failed)"}`);
+      }
     }
+  } catch (e) {
+    // Nothing was written yet: release the claim so the learner can submit again.
+    await prisma.assessment.update({ where: { id: a.id }, data: { submittedAt: null } }).catch(() => {});
+    throw e;
   }
 
   const attempts: AttemptResult[] = [];

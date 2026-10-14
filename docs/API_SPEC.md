@@ -1,6 +1,6 @@
 # API Specification (contract v1.1)
 
-Updated: **2026-10-14** after Module 5 (PDF ingestion). Contract v1.1 + `ingestSource` + health `usage` (first audit: same day, commit `2d5d93a`).
+Updated: **2026-10-14** after the codebase audit (Modules 0–16 live: ingestion, build + concepts, tutor, quiz, grading, mastery, accounts). Contract v1.1 + later additions listed per endpoint.
 Source of truth for shapes: **`packages/schemas/src/*.ts`** (Zod). Typed client: **`@sc/client`**. This document restates them. If the two ever disagree, the code wins and this doc is wrong.
 
 **Status legend**
@@ -19,9 +19,10 @@ Source of truth for shapes: **`packages/schemas/src/*.ts`** (Zod). Typed client:
 
 | Check | Result |
 |---|---|
-| Unit + contract tests (`npm run test`) | **194 pass** (schemas 106, client 16, core 72) |
-| End-to-end vs running dev server (`npm run test:e2e`) | **39 pass** (no Gemini usage) |
-| End-to-end vs production server (`next build` + `next start`) | 37 pass at Module 4; Module 5 build has 0 warnings |
+| Unit + contract + DB tests (`npm run test`) | **270 pass** (schemas 121, client 16, core 133), after the audit fixes |
+| End-to-end vs production server (`next build` + `next start`, `npm run test:e2e`) | **35 pass**; build 0 warnings; `npm run lint` clean |
+| Real browser (headless Chrome via DevTools protocol) | sign-up form → tutor → reload keeps session (cookie not readable from JS) → dashboard → quiz setup → sources concepts → sign-out gate: **8/8**, 0 console errors |
+| Live Gemini (minimal calls through `llm.ts`) | generate `LLM_MODEL_FAST` + `LLM_MODEL_VERIFY` OK, embed OK (768-d); a 1 ms `LLM_TIMEOUT_MS` aborts and fails cleanly; an invalid key → `config` error; invalid key + valid keys → rotates and succeeds |
 | Real-data ingestion (`npm run stage1:pdf`) | 9-page PDF → READY, 47/47 facts; re-run 0 Gemini requests |
 | Registry ↔ route files (test) | Every `live` endpoint is exported by its route file; no `planned` endpoint exists; no unregistered route |
 | Planned endpoints over HTTP | Return Next's **HTML 404**. `@sc/client` maps this to `ApiError("http_error", 404)`, and in `auto` mode never calls them |
@@ -40,7 +41,7 @@ Source of truth for shapes: **`packages/schemas/src/*.ts`** (Zod). Typed client:
 | Upload body | **Raw file bytes** (`request: "binary"`), not multipart | ✅ |
 | Dates | ISO-8601 UTC strings | ✅ |
 | IDs | Opaque non-empty strings. Sources use UUIDs; other tables use cuids; seed/mocks use readable ids. **Never parse ids** | ✅ |
-| Auth | None. Learner identified by `learnerId`. Seed learner: `demo-learner` | by design |
+| Auth | **Accounts (Module 16).** `POST /api/auth/signup` / `login` set an HttpOnly, SameSite=Lax session cookie (`omnitutor_session`, HMAC-signed, 7 days). Learner-scoped routes (E9, E10, E12–E16) return **401** unless the learner has no password (open profile from `POST /api/learners`, used by tools/tests) or the session is that learner's. Course routes are not tied to an account | ✅ tested (unit, e2e via curl, browser) |
 | Course | Single course; `courseId` optional, default `demo-course`. If the seed is missing, the API returns **409 `not_ready`** ("Run `npm run db:seed`") | ✅ tested |
 | Success | **HTTP 200** for every JSON success, including POST/DELETE. Responses are validated against the response schema before sending; a violation is a 500 `internal` (backend bug, never silent) | ✅ |
 | Errors | `ApiErrorBody` with fixed statuses (`API_ERROR_STATUS`), see below | ✅ |
@@ -55,10 +56,11 @@ Source of truth for shapes: **`packages/schemas/src/*.ts`** (Zod). Typed client:
 |---|---|---|
 | `bad_request` | 400 | Body/query failed validation; unsupported, mismatched, empty, oversize or over-length upload |
 | `not_found` | 404 | Unknown learner / source / quiz; stored file missing |
-| `not_ready` | 409 | Seed missing; deleting a PROCESSING source; (later) course not built, report before submit |
+| `not_ready` | 409 | Seed missing; deleting a PROCESSING source; course not built; report before submit; quiz already submitted or being graded |
+| `unauthorized` | 401 | Wrong name or password; a private learner's data without that learner's session |
 | `rate_limited` | 429 | Gemini quota hit |
-| `llm_error` | 502 | Gemini failed after retry |
-| `internal` | 500 | Anything else, including a response that broke the contract |
+| `llm_error` | 502 | Gemini failed after retry; no quiz question survived verification; the course build returned no usable topics |
+| `internal` | 500 | Anything else, including a response that broke the contract, and Gemini configuration problems (missing or rejected key: the message says which variable to check) |
 
 `[mock]` `mockStates.error`: `{ "error": { "code": "not_ready", "message": "Sources are still processing. Try again when all are READY." } }`
 
@@ -122,6 +124,10 @@ Examples `[mock]` (`citations` in `mocks.ts`):
 | E1 | GET | `/api/health` | `paths.health({gemini?})` | ✅ | 0 | query `HealthQuery` | `HealthResponse` (200 or 503) |
 | E2 | GET | `/api/learners` | `paths.learners()` | ✅ | 4 | — | `Learner[]` |
 | E3 | POST | `/api/learners` | `paths.learners()` | ✅ | 4 | `CreateLearnerRequest` | `Learner` |
+| E21 | POST | `/api/auth/signup` | `paths.signup()` | ✅ | 16 | `Credentials` | `Learner` + `Set-Cookie` |
+| E22 | POST | `/api/auth/login` | `paths.login()` | ✅ | 16 | `Credentials` | `Learner` + `Set-Cookie` |
+| E23 | POST | `/api/auth/logout` | `paths.logout()` | ✅ | 16 | — | `SessionView` (clears the cookie) |
+| E24 | GET | `/api/auth/session` | `paths.session()` | ✅ | 16 | — | `SessionView` |
 | E4 | POST | `/api/sources` | `paths.uploadSource(filename)` | ✅ | 4 | raw bytes + query `UploadQuery` | `UploadResponse` |
 | E5 | GET | `/api/sources` | `paths.sources()` | ✅ | 4 | — | `SourceView[]` |
 | E17 | DELETE | `/api/sources/[id]` | `paths.source(id)` | ✅ | 4 | — | `DeleteSourceResponse` |
@@ -140,7 +146,15 @@ Examples `[mock]` (`citations` in `mocks.ts`):
 | E20 | POST | `/api/search` | `paths.search()` | ✅ | 8 | `SearchRequest` | `SearchResponse` |
 | E19 | GET | `/api/assessments?learnerId=` (quiz history list) | — | 🔶 | — | — | — |
 
-Registry: `packages/schemas/src/endpoints.ts`, with 18 JSON endpoints (E1–E5, E7–E18, E20) plus `NON_JSON_ROUTES.file` (E6).
+Registry: `packages/schemas/src/endpoints.ts`, with 22 JSON endpoints (E1–E5, E7–E18, E20–E24) plus `NON_JSON_ROUTES.file` (E6).
+
+### E21–E24. Accounts: ✅ LIVE (Module 16)
+- **Body (signup, login):** `Credentials = { name: string (trimmed, 1–60), password: string (8–200) }`.
+- **signup:** creates a private learner (scrypt hash). **400** if an account with that name exists (case-insensitive). Response `Learner`, plus `Set-Cookie: omnitutor_session=…; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax` (`Secure` when served over HTTPS).
+- **login:** **401 `unauthorized`** "Wrong name or password." for an unknown name or a wrong password (same work either way, so timing doesn't reveal names).
+- **logout:** always 200 `{ "learner": null }`, clears the cookie. **session:** `{ "learner": Learner | null }`.
+- **Secret:** `SESSION_SECRET` (≥ 32 chars), else a random secret generated once into `data/cache/session-secret` (gitignored).
+- **Not built:** password reset, email verification, rate limiting of login attempts, roles.
 
 ### E20. `POST /api/search`: ✅ LIVE (Module 8)
 - **Body:** `SearchRequest = { query: string (1–2000, trimmed; same cap as a tutor message), k?: 1–20 (default 6), courseId? }`.
@@ -171,7 +185,7 @@ Registry: `packages/schemas/src/endpoints.ts`, with 18 JSON endpoints (E1–E5, 
 
 ### E2. `GET /api/learners`: ✅ LIVE
 - **Code:** `apps/web/app/api/learners/route.ts` → `listLearners()` (`packages/core/src/learners.ts`).
-- **Response:** `Learner[]` (`{ id, name, createdAt }`), oldest first.
+- **Response:** `Learner[]` (`{ id, name, createdAt }`), oldest first. **Open profiles only** (no password); accounts are never listed. The UI doesn't call it any more (it uses E21–E24).
 - `[route]` after seed: `[{"id":"demo-learner","name":"Demo Learner","createdAt":"2026-10-13T18:49:33.844Z"}]`
 
 ### E3. `POST /api/learners`: ✅ LIVE
@@ -286,6 +300,7 @@ Registry: `packages/schemas/src/endpoints.ts`, with 18 JSON endpoints (E1–E5, 
 | `description` | string | |
 | `prereqIds` | Id[] | ids of other topics in the same course; **not FK-enforced** (`Topic.prereqIds String[]`) |
 | `chunkCount` | int ≥ 0 | |
+| `concepts` | `TopicConcept[]` (≤ 8) | subtopics: `{ label, chunkCount, citations: Citation[] (≤ 2) }`, most-taught first; merged from the chunks' ingestion concept labels (no Gemini call) |
 
 `[mock]` (2 of 6):
 ```json
@@ -421,7 +436,8 @@ Refusal `[mock]` (`mockStates.refusedAnswer`):
 - **Errors:** 404. Allowed after submission (Q14).
 
 ### E14. `POST /api/quiz/[id]/submit`: ✅ LIVE (Module 13). 409 if already submitted; 400 for foreign question ids or type mismatches
-- **Body:** `SubmitRequest = { responses: { questionId: Id, response: QuizResponse }[] }`. **Duplicate `questionId`s are rejected.** Unanswered questions may be omitted and are graded as wrong.
+- **Body:** `SubmitRequest = { responses: { questionId: Id, response: QuizResponse }[] }`. **Duplicate `questionId`s are rejected.** Unanswered questions may be omitted and are graded as wrong; a blank SHORT answer counts as unanswered.
+- **Concurrency:** the quiz is claimed atomically before grading; a second submit while it is being graded (or after) gets **409 `not_ready`**. If short-answer grading fails (Gemini error), the claim is released and the learner can submit again.
 - `QuizResponse` is a discriminated union on `type` and **must match the question's type** (server-side check, not expressible in the schema):
 
 | `type` | Shape |
@@ -511,8 +527,8 @@ Cold start `[mock]` (`mockStates.newLearnerMastery`): `needsDiagnostic: true`, e
 
 | Endpoint | Live? |
 |---|---|
-| health, learners (list/create), sources (upload/list/delete/**ingest**), files | ✅ yes (through `@sc/client` in `auto` mode) |
-| everything else | mock (via `@sc/client`); HTML 404 if called directly |
+| every registry endpoint (E1–E5, E7–E18, E20–E24) and files (E6) | ✅ live (through `@sc/client`; `auto` mode calls the API for every `live` endpoint) |
+| E19 (quiz history list) | 🔶 proposed only; not in the registry |
 
 ## 5. Decisions (adopted 2026-10-14; the teammate may reopen any of them)
 
@@ -536,4 +552,6 @@ Cold start `[mock]` (`mockStates.newLearnerMastery`): `needsDiagnostic: true`, e
 | Q16 | Embedded text | `title + "\n" + content` (Module 8) |
 | Q17 | Restart recovery | **Implemented:** `instrumentation.ts` marks PROCESSING rows with no progress for 2 min as FAILED |
 | Q18 | Unsupported PPTX images | **Implemented (Module 6):** skipped, noted in the slide's chunk as `[Figure omitted: …]` |
-| Q19 | Gemini limiter values | **Implemented:** verified free tier (15/250K/500; 100/30K/1K), enforced below it (12/200K/450; 80/24K/900), env-overridable |
+| Q19 | Gemini limiter values | **Implemented:** verified free tier (15/250K/500; 100/30K/1K), enforced below it (12/200K/450; 80/24K/900), env-overridable; budgets scale with the number of keys in `APP_GEMINI_API_KEYS` |
+| Q20 | Learner privacy | **Implemented (Module 16):** accounts with server-enforced ownership of learner data; open profiles remain for tools/tests |
+| Q21 | Double submit | **Implemented:** atomic claim (`submittedAt` set while `IN_PROGRESS`; a claim older than 5 min can be taken over after a crash) |

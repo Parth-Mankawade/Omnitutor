@@ -206,10 +206,10 @@ export async function chat(req: ChatRequest): Promise<TutorAnswer> {
   const history = (
     await prisma.chatMessage.findMany({ where: { learnerId: req.learnerId, courseId }, orderBy: { createdAt: "desc" }, take: HISTORY_TURNS, select: { role: true, content: true } })
   ).reverse();
-  const userMsg = await prisma.chatMessage.create({ data: { learnerId: req.learnerId, courseId, role: "USER", content: req.message } });
-
   const a = await answerCore({ question: req.message, courseId, learnerId: req.learnerId, history, cache: false });
 
+  // Stored only once answered: a failed turn (e.g. Gemini down) leaves no unanswered question behind.
+  const userMsg = await prisma.chatMessage.create({ data: { learnerId: req.learnerId, courseId, role: "USER", content: req.message } });
   const assistant = await prisma.chatMessage.create({
     data: {
       learnerId: req.learnerId, courseId, role: "ASSISTANT", content: plainText(a.blocks), blocks: a.blocks,

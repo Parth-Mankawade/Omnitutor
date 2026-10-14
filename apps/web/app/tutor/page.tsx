@@ -52,10 +52,9 @@ export default function TutorPage() {
   const [active, setActive] = useState<Citation | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
 
+  // The learner only changes by signing out, which unmounts this page (LearnerGate): no reset needed.
   useEffect(() => {
     if (!learner) return;
-    setMessages([]);
-    setActive(null);
     api
       .chatHistory(learner.id)
       .then((h) => {

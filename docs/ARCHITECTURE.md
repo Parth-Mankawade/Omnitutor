@@ -4,6 +4,24 @@ IIT Mandi Multimodal AI Hackathon 2026 · **Track D: Personalized Tutoring & Ada
 
 This document is the shared reference for both teammates. The design is frozen: change it only by agreement, and record the change here.
 
+> **Implementation status (audited against the code, 2026-10-14).** Everything below describes the code as built.
+> Where the build differs from the original plan, §0 says how and why; nothing planned is described as built.
+
+---
+
+## 0. Deviations from the original plan (all deliberate, all in the code)
+
+| Planned | Built instead | Why |
+|---|---|---|
+| No auth; learner picker in the header | **Accounts** (Module 16): name + password, scrypt hashes, HMAC-signed HttpOnly session cookie; learner-scoped routes return 401 unless the session owns the learner. Passwordless learners (`POST /api/learners`, used by tools/tests) stay open and are not listed | Requested by the user: private learner data. Course material stays shared |
+| Topics only | Topics **plus concepts (subtopics)**: each topic lists the concept labels ingestion gave its chunks, merged and ranked, each cited | Track D asks for topics/concepts/prerequisites; no extra Gemini call |
+| One video call per file | One call per **≤ 60 s window** (`videoMetadata` offsets) | Timestamps stay accurate (mean error 0.3 s on the real video) |
+| Blind verify with the generating model | Verify with a **different model** (`LLM_MODEL_VERIFY`, cross-model) | Track D lists cross-model verification; falls back to `LLM_MODEL_FAST` if unset |
+| `tools/eval/ragas.py`, `tools/eval/score.ts`, `tools/sim` (teammate) | `tools/e2e/src/eval-rag.ts` (RAGAS metric **definitions** re-implemented with a Gemini judge; not the `ragas` package) and `tools/e2e/src/sim-students.ts` (no LLM) | The teammate deliverables did not arrive; one TypeScript toolchain |
+| One Gemini key | `APP_GEMINI_API_KEYS` rotation on 429 or a rejected key, `LLM_MODEL_FALLBACK` on 5xx/429/404, per-request timeout `LLM_TIMEOUT_MS` (120 s) | Free-tier quotas and overloaded models were the main failure mode in testing |
+
+The teammate's early design notes (`docs/product-requirements.md`, `system-architecture.md`, `technical-design.md`, `database-and-rag.md`, `api-contracts.md`, `delivery-plan.md`, `development-deployment.md`, `evaluation.md`, `security-privacy.md`, `glossary-and-decisions.md`) describe a **different, unbuilt design** (pgvector, full-text hybrid search, per-course authorization). Each carries a banner saying so; this file and [API_SPEC.md](API_SPEC.md) are authoritative.
+
 ---
 
 ## 1. What we are building
@@ -25,7 +43,8 @@ How it is judged: KB & Grounding 20 · Assessment 15 · Personalization 20 · UX
                     ┌──────────── apps/web — Next.js (one local process) ─────────────────────────┐
                     │                                                                             │
   Browser ──────────┤  Pages: /sources  /tutor  /quiz  /quiz/[id]/report  /dashboard              │
-  (learner picker)  │  API routes (app/api/*) — thin: parse request, call @sc/core, return JSON   │
+  (signed in)      │  API routes (app/api/*) — thin: parse request, check the session cookie,    │
+                    │  call @sc/core, return JSON. Also /login                                    │
                     └──────────────┬──────────────────────────────────────────────────────────────┘
                                    │ imports
                     ┌──────────────▼──────────── packages/core (@sc/core) ────────────────────────┐
@@ -39,7 +58,7 @@ How it is judged: KB & Grounding 20 · Assessment 15 · Personalization 20 · UX
                              │ Postgres  │ docker-compose :5434   │
                              └───────────┘                        │
    data/uploads/ ◄── originals, served by /api/files/[id] (HTTP Range)
-   tools/eval/ragas.py ──HTTP──► /api/eval/answer       tools/sim (imports @sc/core bkt; no LLM)
+   tools/e2e/src/eval-rag.ts ──HTTP──► /api/eval/answer   tools/e2e/src/sim-students.ts (no LLM)
 ```
 
 **Key decisions**
@@ -49,7 +68,7 @@ How it is judged: KB & Grounding 20 · Assessment 15 · Personalization 20 · UX
 | One Next.js process run locally, no serverless | Ingestion runs for minutes; serverless timeouts would kill it. Live deployment isn't required. |
 | No worker or queue | `POST /api/sources` starts ingestion without awaiting it; the UI polls `Source.status`. That's enough for a demo. |
 | Postgres only, no pgvector | Embeddings are stored as `Float[]` and cosine is computed in JS. A few thousand chunks fit easily in memory. |
-| `packages/core/src/llm.ts` is the only Gemini caller | One place for retries, Zod validation, typed errors and model selection. It passes `apiKey` explicitly from `APP_GEMINI_API_KEY`; the SDK would otherwise fall back to a machine-wide `GEMINI_API_KEY`. |
+| `packages/core/src/llm.ts` is the only Gemini caller | One place for the rate limiter, cache, retries, key rotation, model fallback, request timeout, Zod validation, typed errors and model selection. It passes `apiKey` explicitly from `APP_GEMINI_API_KEY(S)`; the SDK would otherwise fall back to a machine-wide `GEMINI_API_KEY`. The SDK's own HTTP retries stay off (we never set `retryOptions`), so every request is counted by our limiter. |
 | Originals kept in `data/uploads/` | Citations open the real file. Gemini Files API uploads expire after 48 h, but our copies don't. |
 | Model IDs come from env | AI Studio projects differ in which models are enabled. |
 | Turborepo monorepo (npm workspaces) | Clear ownership boundaries. Domain logic (`@sc/core`) has no Next.js imports, so the simulator and eval can import it directly. |
@@ -156,7 +175,8 @@ Course ─┬─< Source (type PDF|PPTX|VIDEO, filename, mimeType, sizeBytes, pa
         │        └─< Attempt (questionId, response, correct, score 0..1, feedback, misconception?)
         │                                                        @@unique([assessmentId, questionId])
         └─< ChatMessage (learnerId, role USER|ASSISTANT, content, blocks?, coverage?, refused, topScore?)
-Learner ─┬─< Mastery (topicId, p=0.3, n=0)                       @@unique([learnerId, topicId])
+Learner (name, passwordHash? — set = private account)
+         ├─< Mastery (topicId, p=0.3, n=0)                       @@unique([learnerId, topicId])
          └─< MasteryEvent (topicId, before, after, source QUIZ|CHAT, attemptId?, chatMessageId?)
 ```
 
@@ -171,6 +191,7 @@ Learner ─┬─< Mastery (topicId, p=0.3, n=0)                       @@unique(
 - Deleting a course cascades to everything under it.
 - Deleting a source deletes its chunks.
 - Deleting a topic untags its chunks and deletes its questions, mastery and events. So **build topics once, before learners start**.
+- Once topics exist, ingesting (or re-ingesting) a source tags its new chunks to the nearest **stored** topic vector (`Topic.embedding`), the build's own rule, with no Gemini call. A rebuild is still needed to get topics *for* new material.
 - Deleting a learner deletes all of their data.
 
 **Citation invariant:** every chunk has exactly one locator. PDF chunks have `page`, slide chunks have `slide`, video chunks have `tStart`/`tEnd`. A citation is a `chunkId`, and the UI resolves it to `{sourceId, locator, excerpt}`.
@@ -181,39 +202,43 @@ Learner ─┬─< Mastery (topicId, p=0.3, n=0)                       @@unique(
 
 ### 6.1 Ingestion (`POST /api/sources`, then `POST /api/sources/[id]/ingest`)
 1. ✅ (Module 4) Upload: stream the raw bytes to `data/uploads/<uuid>.<ext>` (500 MiB cap), check the content matches the extension, record `pageCount` / `durationSec`, and create a `Source` with status `PENDING`. **No Gemini call.**
-2. ✅ (Module 5) Ingest on request: status `PROCESSING`, then return immediately while the job continues via `after()`. The UI polls `GET /api/sources`. A failing run → `FAILED` + `error`; re-running is cheap (cache). Server start marks interrupted runs `FAILED`.
+2. ✅ (Module 5) Ingest on request: status `PROCESSING`, then return immediately while the job continues via Next's `after()` (`apps/web/app/api/sources/[id]/ingest/route.ts`). The UI polls `GET /api/sources`. A failing run → `FAILED` + `error`; re-running is cheap (cache). Server start marks interrupted runs `FAILED`.
 3. Per type:
    - **PDF:** `pdf-lib` splits the file into single-page PDFs. Each page gets one Gemini call (concurrency 4), which returns `{blocks:[{kind:text|figure|table, content}], conceptLabels}`. Text blocks become chunks. **Each figure becomes its own chunk** holding a description of the diagram (this is how "use info from figures" is met). Locator: `page`.
    - **PPTX:** JSZip reads slide order from `ppt/presentation.xml` plus its rels, text from `<a:t>` runs, and images through the slide rels into `ppt/media/*`. Slides go to Gemini in batches of 5 (text + images) and come back as one chunk per slide, with figure descriptions folded in. Locator: `slide`.
-   - **Video (mp4, ≤ 20 min):** upload through the Gemini Files API, poll until `ACTIVE`, then make one call that returns `segments:[{tStart,tEnd,transcript,onScreen,conceptLabels}]`. Locator: `tStart/tEnd`.
-4. Embed every chunk (`EMBED_MODEL`, 768-dim) and store it as `Float[]`.
+   - **Video (mp4, ≤ 20 min):** upload through the Gemini Files API, poll until `ACTIVE`, then one call per **≤ 60 s window** (`videoMetadata` start/end offsets), each returning `segments:[{tStart,tEnd,transcript,onScreen,conceptLabels}]`; a window whose segments don't cover it is rejected. Locator: `tStart/tEnd`.
+4. Embed every chunk (`EMBED_MODEL`, 768-dim) and store it as `Float[]`; if the course has topics, tag each chunk to its nearest topic vector.
 5. Set status to `READY`, or to `FAILED` with an `error`.
 
 ### 6.2 Course build (`POST /api/build`)
-One LLM call over the concept labels and chunk summaries returns **5–8 topics** with descriptions and **prerequisite links**. Each topic description is embedded, and each chunk is tagged with its nearest topic by cosine.
+One LLM call over an outline of every chunk (locator, title or excerpt, concept labels) returns **5–8 topics** with descriptions and **prerequisite links** (a prerequisite must be an earlier topic; others are dropped). Each topic's name + description is embedded and stored on the topic, and each chunk is tagged with its nearest topic by cosine. Refused with 409 if learners have progress on the topics, unless `force: true` (decision Q9).
+
+**Concepts (subtopics):** `GET /api/topics` returns, per topic, up to 8 concepts: the ingestion concept labels of its chunks, merged case-, punctuation-, spacing- and plural-insensitively (`conceptKey`), ranked by how many chunks teach them, each with up to 2 citations. Pure code (`topicConcepts` in `build.ts`), no Gemini call.
 
 ### 6.3 Tutor (`POST /api/chat`)
-1. Embed the query and take the top 6 chunks by cosine.
+0. Whole-message small talk ("hi", "thanks") gets a friendly reply without retrieval or an LLM call.
+1. Embed the query (short follow-ups are retrieved together with the previous question) and take the top 6 chunks by cosine.
 2. Load the learner's mastery and any weak prerequisites of the matched topics.
 3. Make one structured call:
    ```
-   { coverage: "supported" | "partial" | "not_covered",
-     blocks: [{ text, origin: "material" | "outside", citations: [chunkId] }],
-     learnerEvidence: [{ topicId, signal: "correct" | "incorrect" | "confused" }] }
+   { coverage: "SUPPORTED" | "PARTIAL" | "NOT_COVERED",
+     blocks: [{ origin: "material" | "outside", text, citations: ["C1", "C4"] }],   // excerpt ids from the prompt
+     learnerEvidence: [{ topic: "T3", signal: "understands" | "misconception" }] }  // topic keys from the prompt
    ```
 4. Server-side guards (these make grounding trustworthy):
    - Drop any citation that isn't in the retrieved set.
    - Relabel a `material` block with no citations as `outside`.
    - **Refuse** if the top cosine score is below `REFUSAL_TAU` or `coverage == not_covered`.
-   - Apply a damped BKT update (30% weight) from `learnerEvidence`. This is where "update after conversation" comes from.
+   - Apply a damped BKT update (30% weight, at most one per topic per turn) from `learnerEvidence`. This is where "update after conversation" comes from.
+   - The turn (question + answer) is stored only once answered, so a failed call leaves no unanswered question in the history.
 5. **Citation panel:** PDF in an iframe at `#page=N` with the excerpt beside it; a slide as a reconstructed card; video in a `<video>` element seeked to `tStart` (needs HTTP Range on `/api/files/[id]`). **All three must work in the demo.**
 
 ### 6.4 Quiz (`POST /api/quiz`, `POST /api/quiz/[id]/submit`)
 - **Topic selection:** weighted by `1 − mastery`. **Difficulty by mastery band:** < 0.4 easy, 0.4–0.7 medium, > 0.7 hard.
   - Diagnostic: 1 question per topic. Quiz: student-chosen scope. Mock: all topics, 10 questions.
-- **Generate:** one batched call. MCQ distractors each carry a *misconception label*. The prompt includes stems the student has already seen, and any question whose `stemHash` was seen before is rejected. This is how we guarantee no repeats.
-- **Verify:** one batched *blind* call that answers the questions without seeing our answers. Questions where the two disagree are dropped. Numeric answers are compared in code with 1% tolerance.
-- **Grade on submit:** MCQ and numeric are graded in code. Short answers are graded in one batched LLM call. Feedback cites source chunks. Each answer triggers a BKT update.
+- **Generate:** one batched call for the requested slots **+50% extra candidates** (each topic sees only its own excerpts). MCQ distractors each carry a *misconception label*. Code checks reject unknown topics, malformed answers, citations that aren't real excerpts of the question's own topic, and repeats. The prompt includes stems the student has already seen, and any question whose `stemHash` was seen before is rejected. This is how we guarantee no repeats.
+- **Verify:** one batched *blind* call, made with **a different model** (`LLM_MODEL_VERIFY`), that answers the questions without seeing our answers. Questions where the two disagree are dropped. Numeric answers are compared in code with 1% tolerance.
+- **Grade on submit:** the quiz is first claimed atomically (a concurrent submit gets 409, so mastery is never updated twice). MCQ and numeric are graded in code. Short answers are graded in one batched LLM call in which every grade must echo its answer's first words (misaligned grades are re-graded one by one); a blank short answer counts as unanswered. Feedback cites source chunks. Each answer triggers a BKT update.
 - **Report:** per-topic score, mastery delta, misconceptions detected (from the chosen distractors), and citations to revisit.
 
 ### 6.5 Learner model (`packages/core/src/bkt.ts`)
@@ -257,7 +282,9 @@ Each update writes `Mastery` and a `MasteryEvent(before, after, source)`, which 
 | Method & path | Request → Response (`@sc/schemas`) | Module |
 |---|---|---|
 | `GET /api/health[?gemini=1]` | → `HealthResponse` (200 / 503) | 0 ✅ |
-| `GET /api/learners` / `POST /api/learners` | → `Learner[]` / `CreateLearnerRequest` → `Learner` | 4 ✅ |
+| `GET /api/learners` / `POST /api/learners` | → `Learner[]` (open profiles only) / `CreateLearnerRequest` → `Learner` (open profile, for tools/tests) | 4 ✅ |
+| `POST /api/auth/signup` · `POST /api/auth/login` | `Credentials` → `Learner` + session cookie (400 name taken · 401 wrong name or password) | 16 ✅ |
+| `POST /api/auth/logout` · `GET /api/auth/session` | → `SessionView` (`{ learner }`, null when signed out) | 16 ✅ |
 | `POST /api/sources?filename=` | raw file bytes → `UploadResponse` (`PENDING`) | 4 ✅ |
 | `GET /api/sources` | → `SourceView[]` | 4 ✅ |
 | `DELETE /api/sources/[id]` | → `DeleteSourceResponse` (409 while PROCESSING) | 4 ✅ |
@@ -265,14 +292,16 @@ Each update writes `Mastery` and a `MasteryEvent(before, after, source)`, which 
 | `GET`/`HEAD /api/files/[id]` | → original bytes; Range → 206 / 416 | 4 ✅ |
 | `POST /api/build` | `BuildRequest` (`courseId?`, `force?`) → `BuildResponse` | 9 ✅ |
 | `GET /api/topics` | `?courseId` → `TopicView[]` | 9 ✅ |
-| `POST /api/chat` | `ChatRequest` → `TutorAnswer` | 10 |
-| `GET /api/chat?learnerId=` | → `ChatMessageView[]` | 10 |
-| `POST /api/eval/answer` | `EvalAnswerRequest` → `EvalAnswerResponse` | 10 |
-| `POST /api/quiz` | `CreateQuizRequest` → `Quiz` | 12 |
-| `GET /api/quiz/[id]` | → `Quiz` | 12 |
-| `POST /api/quiz/[id]/submit` | `SubmitRequest` → `QuizReport` | 13 |
-| `GET /api/quiz/[id]/report` | → `QuizReport` | 13 |
-| `GET /api/mastery?learnerId=` | → `MasteryView` | 14 |
+| `POST /api/chat` | `ChatRequest` → `TutorAnswer` | 10 ✅ |
+| `GET /api/chat?learnerId=` | → `ChatMessageView[]` | 10 ✅ |
+| `POST /api/eval/answer` | `EvalAnswerRequest` → `EvalAnswerResponse` | 10 ✅ |
+| `POST /api/quiz` | `CreateQuizRequest` → `Quiz` | 12 ✅ |
+| `GET /api/quiz/[id]` | → `Quiz` | 12 ✅ |
+| `POST /api/quiz/[id]/submit` | `SubmitRequest` → `QuizReport` | 13 ✅ |
+| `GET /api/quiz/[id]/report` | → `QuizReport` | 13 ✅ |
+| `GET /api/mastery?learnerId=` | → `MasteryView` | 14 ✅ |
+
+Learner-scoped routes (chat, chat history, quiz create/get/submit/report, mastery) return **401 `unauthorized`** when the learner is a private account and the session cookie isn't theirs. Course routes (sources, files, build, topics, search, eval) are not tied to an account.
 
 Full details, examples and errors: [API_SPEC.md](API_SPEC.md). Postman: `docs/postman/study-companion.postman_collection.json`.
 
@@ -282,11 +311,14 @@ Full details, examples and errors: [API_SPEC.md](API_SPEC.md). Postman: `docs/po
 
 ## 9. Evaluation
 
-- **Test set** (`tools/eval/testset.json`): 15 answerable questions (5 per modality, including 2 that need a diagram and 2 from the video) with known locations, plus 5 off-material questions.
-- `tools/eval/ragas.py` calls `/api/eval/answer` and reports **faithfulness, answer relevancy, context precision, context recall**.
-- `tools/eval/score.ts` reports **citation accuracy** (whether the right page/slide/timestamp was cited) and **refusal precision/recall**. This is also where `REFUSAL_TAU` gets calibrated.
-- `tools/sim` uses no LLM. It runs a pool of about 30 questions against 4 student profiles with hidden true mastery, over 3 sessions, comparing **adaptive and random** selection. It reports mastery gain, estimation error (|estimated − true|) and repetition rate.
-  *Caveat to state in the README: the simulator uses different BKT parameters from the model.*
+*Planned:* `tools/eval/ragas.py` + `score.ts` + `tools/sim` from the teammate. *Built* (see §0):
+
+- **Test sets:** `data/demo/testset.stage1.json` (team-built, with known page/slide/timestamp locations and off-material questions) plus the holdout set from the overfitting audit (`tools/e2e/holdout/`).
+- `npm run eval:rag` (`tools/e2e/src/eval-rag.ts`) calls `/api/eval/answer` and scores **faithfulness, answer relevancy, context precision, context recall** using the RAGAS definitions with a Gemini judge (cached), plus refusal precision.
+- `npm run stage1:tutor` reports **citation accuracy** and **refusal rates** on real questions; it is where `REFUSAL_TAU` (0.60) was calibrated.
+- `npm run eval:sim` (`tools/e2e/src/sim-students.ts`) uses no LLM: simulated students with hidden true mastery over several sessions, **adaptive vs random** selection, reporting mastery gain, estimation error and repetition rate.
+  *Caveat (stated in the README): the simulated students use different parameters from the tutor's BKT model.*
+- Latest numbers: [PROGRESS.md](PROGRESS.md) and the README.
 
 ---
 
@@ -327,7 +359,7 @@ Live status: [PROGRESS.md](PROGRESS.md). Teammate tasks run in parallel: [TEAMMA
 OS **CPU scheduling**: one NPTEL/OCW lecture (15–20 min mp4), one textbook chapter (20–30 pages), one deck of about 20 slides (.pptx). It has numericals (waiting and turnaround time), Gantt-chart diagrams and clear prerequisites (process → scheduling criteria → FCFS/SJF/RR → priority/MLFQ).
 
 ## 13. Explicitly cut
-Worker/queue, Docker image for the app, LibreOffice, YouTube input, pgvector, hybrid search/RRF, excerpt highlighting, mathjs, question-bank pre-warm, embedding dedup, mastery decay, prerequisite propagation, auth, streaming, deployment.
+Worker/queue, Docker image for the app, LibreOffice, YouTube input, pgvector, hybrid search/RRF, excerpt highlighting, mathjs, question-bank pre-warm, embedding dedup, mastery decay, prerequisite propagation, streaming, deployment. (*Auth* was on this list; simple accounts were added later at the user's request, §0.)
 *P1, only after the full loop works:* React Flow course map, Hindi/Hinglish toggle.
 
 ## 14. Running locally
@@ -354,13 +386,15 @@ curl localhost:3000/api/health
 | `npm run db:seed` | Idempotent seed: `demo-course`, `demo-learner` |
 | `npm run db:verify` | 12 schema behaviour checks on a throwaway course |
 | `npm run db:studio` | Prisma's table browser (alternative to Beekeeper) |
-| `npm run test` | Unit + contract tests: schemas, client, core (162 at Module 4; core's service tests need Postgres) |
-| `npm run test:e2e` | End-to-end tests against the running app (`npm run dev` first; `E2E_SKIP_HEAVY=1` skips the 2 GiB streaming test) |
+| `npm run test` | Unit + contract + DB tests: schemas, client, core (270 on 2026-10-14; core's service tests need Postgres and never call Gemini) |
+| `npm run test:e2e` | End-to-end tests against the running app (35 on 2026-10-14; `npm run dev` or `start` first; `E2E_SKIP_HEAVY=1` skips the 2 GiB streaming test) |
 | `npm run build` / `npm run start -w @sc/web` | Production build / server (stop dev first on Windows) |
 | `npm run db:deploy` | Apply existing migrations without creating new ones (teammate setup) |
 | `npm run smoke [-- json pdf slides video embed]` | Gemini smoke test (all checks, or the named ones); prints today's usage |
 | `npm run stage1:pdf` | **Spends quota on first run:** ingest the real Stage-1 PDF and score it against the 47-fact ground truth; second run must cost 0 |
 | `npm run models:list` | List models available to `APP_GEMINI_API_KEY` |
+| `npm run stage1:<name>` (`pdf`, `video`, `pptx`, `retrieval`, `build`, `tutor`, `quiz`, `grading`, `mastery`) | Real-data checks against pre-registered ground truth (spend quota only when inputs or prompts change; cached otherwise) |
+| `npm run eval:rag` / `npm run eval:sim` | RAGAS-definition metrics with a Gemini judge / simulated students (no LLM) |
 
 **Windows:** stop the dev server before `npm install` or `db:generate` (Prisma's engine DLL is locked while it runs).
 

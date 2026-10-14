@@ -36,7 +36,7 @@ Students learn from three formats at once: a recorded lecture, a textbook chapte
   - a usage ledger;
   - multi-key rotation on quota errors;
   - a backup model when one is overloaded.
-- **Testing:** 248 unit/DB tests, 35 end-to-end API tests, and pre-registered acceptance checks on real course files.
+- **Testing:** 270 unit/DB tests, 35 end-to-end API tests, a real-browser smoke test of the signed-in flow, and pre-registered acceptance checks on real course files.
 
 ### Evaluation (real data, measured)
 | What | Result |

@@ -12,7 +12,7 @@ import type { AssessmentKind, CreateQuizRequest, Quiz, QuizQuestion, QuestionTyp
 import { difficultyFor, masteryMap } from "./bkt";
 import { sha256 } from "./cache";
 import { requireCourse } from "./course";
-import { badRequest, notFound, notReady } from "./errors";
+import { AppError, badRequest, notFound, notReady } from "./errors";
 import { requireLearner } from "./learners";
 import { generateJson, type Usage } from "./llm";
 
@@ -265,7 +265,7 @@ export async function createQuizWithReport(req: CreateQuizRequest): Promise<{ qu
   const kept: Candidate[] = [];
   for (const t of inPlay) kept.push(...verified.filter((q) => q.topicId === t.id).slice(0, alloc.get(t.id)!));
   for (const q of verified) if (kept.length < count && !kept.includes(q)) kept.push(q);
-  if (kept.length === 0) throw new Error("No question survived verification; try again (the generation may have failed for this material).");
+  if (kept.length === 0) throw new AppError("llm_error", "No question survived verification; try again (the generation may have failed for this material).");
 
   const assessment = await prisma.assessment.create({
     data: { learnerId: req.learnerId, courseId, kind: req.kind, scopeTopicIds: scope.map((t) => t.id) },

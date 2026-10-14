@@ -106,7 +106,7 @@ OS CPU scheduling: 1 NPTEL/OCW lecture (15–20 min), 1 textbook chapter (20–3
 - Promised API for the teammate's simulator: `@sc/core` exports `updateMastery(p: number, correct: boolean, type: QuestionType, weight?: number): number` (Module 11).
 
 ## Status
-- [ ] Confirm deadline on Devpost
+- [x] Deadline: 12 AM, 15 Oct 2026 (user-confirmed)
 - [x] Module 0: skeleton (Turborepo, Postgres, Prisma, /api/health) — see docs/PROGRESS.md
 - [x] Module 1: Gemini wrapper (`packages/core/src/llm.ts`) + `npm run smoke` — 4/4 pass, video check needs a sample mp4
 - [x] Module 2: Prisma schema (11 tables) + migration `init` + seed + `npm run db:verify` 12/12
@@ -129,7 +129,8 @@ OS CPU scheduling: 1 NPTEL/OCW lecture (15–20 min), 1 textbook chapter (20–3
 - [x] UI wired to the live API (sources, tutor + citation viewer, quiz, report, dashboard; learner picker)
 - [x] Module 15 basic: `npm run eval:rag` (RAGAS definitions, Gemini judge) + `npm run eval:sim` (simulated students). Results in docs/PROGRESS.md
 - [x] Subtopics: per-topic cited concepts from ingestion labels in `GET /api/topics`
-- [x] Module 16: accounts (`/api/auth/signup|login|logout|session`, scrypt + HMAC session cookie); learner routes return 401 unless the session owns the learner (passwordless learners from tools/tests stay open). UI: /login, header account control, sign-in gate on tutor/quiz/dashboard. 264 unit + 35 e2e, build clean
+- [x] Module 16: accounts (`/api/auth/signup|login|logout|session`, scrypt + HMAC session cookie); learner routes return 401 unless the session owns the learner (passwordless learners from tools/tests stay open). UI: /login, header account control, sign-in gate on tutor/quiz/dashboard
+- [x] Codebase audit (docs/PROGRESS.md §4 "Codebase audit"): Gemini request timeout, rejected-key rotation, atomic quiz submit, no orphan chat turns, re-ingest keeps topic tags, lint clean; docs reconciled (ARCHITECTURE §0 deviations, banners on teammate design notes). 270 unit + 35 e2e, real-browser flow 8/8, build clean
 - [ ] Next: demo video, Devpost (docs/SUBMISSION.md)
 - Real-data checks (spend quota only when inputs or prompts change; cached otherwise): `npm run stage1:pdf`, `npm run stage1:video`, `npm run stage1:retrieval`, `npm run holdout:retrieval`, `npm run holdout:generalize`, `npm run stage1:pptx`, `npm run stage1:build`, `npm run stage1:tutor`, `npm run stage1:quiz`, `npm run stage1:grading`, `npm run stage1:mastery`
 - [ ] Everything else

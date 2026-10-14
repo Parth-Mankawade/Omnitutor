@@ -36,9 +36,15 @@ export default function SourcesPage() {
     }
   }, []);
 
+  // Initial load: state is set only in the promise callbacks (load() is for event handlers and polling).
   useEffect(() => {
-    void load();
-  }, [load]);
+    Promise.all([api.listSources(), api.listTopics()])
+      .then(([s, t]) => {
+        setSources(s);
+        setTopics(t);
+      })
+      .catch((e) => setError(errorText(e)));
+  }, []);
 
   // Poll while anything is being processed (ingestion runs in the background on the server).
   const processing = sources?.some((s) => s.status === "PROCESSING") ?? false;

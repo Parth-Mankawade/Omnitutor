@@ -1,4 +1,5 @@
-// Source uploads: stream to disk, verify content, record in the DB. Ingestion starts in Module 5.
+// Source uploads: stream to disk, verify content, record in the DB. Uploads never call Gemini;
+// ingestion starts only on POST /api/sources/[id]/ingest (ingest/index.ts).
 import { randomUUID } from "node:crypto";
 import { mkdir, rename, rm, stat } from "node:fs/promises";
 import path from "node:path";

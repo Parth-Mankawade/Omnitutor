@@ -1,7 +1,7 @@
 "use client";
 import type { AssessmentKind, Quiz, QuizResponse, TopicView } from "@sc/schemas";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { GraduationCapIcon } from "@/components/icons";
 import { useLearner } from "@/components/learner";
 import { api, errorText } from "@/lib/api";
@@ -13,11 +13,18 @@ function QuizFlow() {
   const router = useRouter();
   const params = useSearchParams();
   const { learner } = useLearner();
+  // Deep links from the dashboard: /quiz?kind=DIAGNOSTIC · /quiz?kind=MOCK · /quiz?topics=id1,id2
+  // (topic ids are validated by the server). The quiz starts generating right away.
+  const deepLink = useMemo((): { kind: AssessmentKind; topicIds?: string[] } | null => {
+    const kind = params.get("kind");
+    const ids = params.get("topics")?.split(",").filter(Boolean) ?? [];
+    return kind === "DIAGNOSTIC" || kind === "MOCK" ? { kind } : ids.length ? { kind: "QUIZ", topicIds: ids } : null;
+  }, [params]);
   const [topics, setTopics] = useState<TopicView[]>([]);
-  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [picked, setPicked] = useState<Set<string>>(() => new Set(deepLink?.topicIds ?? []));
   const [count, setCount] = useState(5);
   const [quiz, setQuiz] = useState<Quiz | null>(null);
-  const [phase, setPhase] = useState<"setup" | "generating" | "answering" | "submitting">("setup");
+  const [phase, setPhase] = useState<"setup" | "generating" | "answering" | "submitting">(() => (deepLink ? "generating" : "setup"));
   const [idx, setIdx] = useState(0);
   const [responses, setResponses] = useState<Record<string, QuizResponse>>({});
   const [error, setError] = useState<string | null>(null);
@@ -27,12 +34,10 @@ function QuizFlow() {
     api.listTopics().then(setTopics).catch((e) => setError(errorText(e)));
   }, []);
 
-  async function start(kind: AssessmentKind, topicIds?: string[]) {
-    if (!learner) return;
-    setError(null);
-    setPhase("generating");
+  /** The request itself; state changes only when it answers. */
+  async function generate(learnerId: string, kind: AssessmentKind, topicIds?: string[]) {
     try {
-      const q = await api.createQuiz({ learnerId: learner.id, kind, ...(kind === "QUIZ" && { topicIds, count }) });
+      const q = await api.createQuiz({ learnerId, kind, ...(kind === "QUIZ" && { topicIds, count }) });
       setQuiz(q);
       setIdx(0);
       setResponses({});
@@ -43,21 +48,20 @@ function QuizFlow() {
     }
   }
 
-  // Deep links from the dashboard: /quiz?kind=DIAGNOSTIC · /quiz?kind=MOCK · /quiz?topics=id1,id2
+  function start(kind: AssessmentKind, topicIds?: string[]) {
+    if (!learner) return;
+    setError(null);
+    setPhase("generating");
+    void generate(learner.id, kind, topicIds);
+  }
+
+  // A deep link starts once (phase already began as "generating").
   useEffect(() => {
-    if (autoStarted.current || !learner || topics.length === 0) return;
-    const kind = params.get("kind");
-    const ids = params.get("topics")?.split(",").filter((id) => topics.some((t) => t.id === id));
-    if (kind === "DIAGNOSTIC" || kind === "MOCK") {
-      autoStarted.current = true;
-      void start(kind);
-    } else if (ids?.length) {
-      autoStarted.current = true;
-      setPicked(new Set(ids));
-      void start("QUIZ", ids);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [learner, topics, params]);
+    if (autoStarted.current || !learner || !deepLink) return;
+    autoStarted.current = true;
+    void generate(learner.id, deepLink.kind, deepLink.topicIds);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- generate reads `count` at call time; must not re-run
+  }, [learner, deepLink]);
 
   async function submit() {
     if (!quiz) return;
@@ -91,11 +95,11 @@ function QuizFlow() {
           ) : (
             <>
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <button onClick={() => void start("DIAGNOSTIC")} disabled={!learner} className="space-y-2 rounded-2xl border-2 border-rule bg-surface p-6 text-left transition-all hover:border-proof disabled:opacity-50">
+                <button onClick={() => start("DIAGNOSTIC")} disabled={!learner} className="space-y-2 rounded-2xl border-2 border-rule bg-surface p-6 text-left transition-all hover:border-proof disabled:opacity-50">
                   <p className="font-display text-title text-ink">Diagnostic</p>
                   <p className="text-sm text-graphite">One question per topic ({topics.length}). Start here if you&apos;re new: it calibrates your mastery map.</p>
                 </button>
-                <button onClick={() => void start("MOCK")} disabled={!learner} className="space-y-2 rounded-2xl border-2 border-rule bg-surface p-6 text-left transition-all hover:border-proof disabled:opacity-50">
+                <button onClick={() => start("MOCK")} disabled={!learner} className="space-y-2 rounded-2xl border-2 border-rule bg-surface p-6 text-left transition-all hover:border-proof disabled:opacity-50">
                   <p className="font-display text-title text-ink">Mock exam</p>
                   <p className="text-sm text-graphite">10 questions across all topics, weighted toward your weakest, difficulty matched to your level.</p>
                 </button>
@@ -118,7 +122,7 @@ function QuizFlow() {
                     Questions
                     <input type="number" min={1} max={20} value={count} onChange={(e) => setCount(Math.min(20, Math.max(1, Number(e.target.value) || 1)))} className="w-16 rounded-card border border-rule bg-paper px-2 py-1 text-ink" />
                   </label>
-                  <button onClick={() => void start("QUIZ", [...picked])} disabled={!learner || picked.size === 0} className="rounded-full bg-workspace px-8 py-3 font-bold text-white transition-colors hover:bg-proof disabled:cursor-not-allowed disabled:opacity-30">
+                  <button onClick={() => start("QUIZ", [...picked])} disabled={!learner || picked.size === 0} className="rounded-full bg-workspace px-8 py-3 font-bold text-white transition-colors hover:bg-proof disabled:cursor-not-allowed disabled:opacity-30">
                     Start quiz
                   </button>
                 </div>

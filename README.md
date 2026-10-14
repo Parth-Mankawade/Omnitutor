@@ -38,11 +38,12 @@ Production mode: `npm run build && npm run start -w @sc/web`.
 | Variable | Meaning |
 |---|---|
 | `APP_GEMINI_API_KEY` | one Gemini key |
-| `APP_GEMINI_API_KEYS` | optional: several keys, comma-separated. When one hits its quota, calls move to the next, and the built-in rate limits scale with the number of keys |
+| `APP_GEMINI_API_KEYS` | optional: several keys, comma-separated. When one hits its quota or is rejected (invalid/revoked), calls move to the next, and the built-in rate limits scale with the number of keys |
 | `LLM_MODEL_FAST` / `LLM_MODEL_STRONG` | generation models (bulk extraction + grading / tutor, quiz generation, video, course build) |
 | `LLM_MODEL_VERIFY` | the **different** model that blindly re-answers every generated quiz question (**cross-model validation**); we use `gemini-3.5-flash-lite` against `gemini-3.1-flash-lite` for generation |
 | `LLM_MODEL_FALLBACK` | optional: used when a model is overloaded or out of quota on every key (default: `LLM_MODEL_FAST`), so a demo never fails on a 503/429 |
 | `EMBED_MODEL` | embedding model (`gemini-embedding-001`, 768 dimensions) |
+| `LLM_TIMEOUT_MS` | optional: per-request timeout for Gemini calls (default 120000); a timed-out call is retried once |
 | `SESSION_SECRET` | optional, ≥32 chars; signs login cookies. If unset, a random secret is generated once into `data/cache/session-secret` |
 | `REFUSAL_TAU` | retrieval similarity floor below which the tutor declines without calling the LLM (we use 0.60) |
 | `COURSE_NAME` | name of the default course; it's given to every prompt as context |
@@ -86,7 +87,9 @@ Browser (Next.js pages) ──@sc/client──► Next.js API routes (Zod-valida
   - **no repeats:** stem hashes are compared against everything the learner has seen;
   - **topic tagging:** every question must cite excerpts of its own topic;
   - **blind cross-model verification:** a *different* model answers each MCQ and numeric question without the key, compared in code (±1%), and checks short reference answers against their sources. In our runs it rejected 6 of 30 mock-exam candidates as not answerable from the sources;
-  - **short-answer grading:** includes an alignment check, so a grade always belongs to the right answer.
+  - **short-answer grading:** includes an alignment check, so a grade always belongs to the right answer;
+  - **one grading per quiz:** a submit claims the quiz atomically, so a double click or a second tab can't grade it twice.
+- **Topics, concepts and prerequisites:** the course build groups the material into 5–8 topics with prerequisite links; each topic lists its concepts (subtopics), merged from the concept labels found during ingestion, each linked to where it is taught. Sources added later are tagged to the nearest existing topic automatically (rebuild to re-plan the topics).
 
 Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · API contract: [docs/API_SPEC.md](docs/API_SPEC.md) · ingestion: [docs/INGESTION_SPEC.md](docs/INGESTION_SPEC.md) · every test run with its numbers: [docs/PROGRESS.md](docs/PROGRESS.md).
 
@@ -125,7 +128,8 @@ Test sets:
 - **Speech:** transcription is done by Gemini (no separate speech-recognition engine). Word accuracy on our real lecture video hasn't been measured against a human transcript.
 - **Slides:** diagrams drawn with PowerPoint shapes (not pictures) lose their layout. Charts aren't extracted (they're noted in the slide chunk).
 - **Retrieval:** dense search only (no keyword/hybrid search or reranking); weakest on pages of source code.
-- **Topics:** flat topics + prerequisites (no subtopic level). On our demo course, 79% of sampled chunks were tagged to the expected topic.
+- **Topics:** topics + prerequisites + concepts (concepts are grouped labels, not a planned hierarchy). On our demo course, 79% of sampled chunks were tagged to the expected topic.
+- **Security:** course actions aren't tied to accounts: anyone who can reach the server can upload or delete sources and force a topic rebuild (which erases every learner's progress on those topics). Login attempts aren't rate-limited. Fine for a local, single-machine demo; roles would be needed before sharing a server.
 - **Other:** single course per installation; old `.ppt`, images and URLs are not accepted.
 
 ## Repo layout

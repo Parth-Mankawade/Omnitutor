@@ -1,13 +1,17 @@
 # Progress Tracker
 
-Updated: **2026-10-14** (cross-referenced with ARCHITECTURE.md) · Deadline: **NOT CONFIRMED (check Devpost)**
+Updated: **2026-10-14** (after the codebase audit; cross-referenced with ARCHITECTURE.md) · Deadline: **12 AM, 15 Oct 2026** (Devpost)
 Rule: one module at a time → test → user review → next. A module is ✅ only after its tests pass.
 
 Legend: ✅ done & verified · 🟡 in progress / awaiting review · ⬜ not started · ❌ blocked
 
 ---
 
-## 0. Summary (2026-10-14, after the overfitting audit + Module 6)
+## 0. Summary
+
+**Latest (2026-10-14, after subtopics, Module 16 accounts and the codebase audit):** every endpoint is live; 270 unit/DB tests, 35 e2e, lint clean, production build 0 warnings, real-browser flow 8/8, live Gemini checks pass (details: the last two entries of §4). The history below is kept as it was written.
+
+### Earlier summary (after the overfitting audit + Module 6)
 
 - **Done and verified on your real data:**
   - **PDF ingestion (5):** 47/47 facts.
@@ -645,6 +649,43 @@ A grep of `packages/*/src` and `apps/web` for file names, page numbers, timestam
 - **Estimation:** it estimates mastery better in every profile.
 - **Repetition:** it never repeats a question; random repeats about 30%.
 - **Caveat:** synthetic students and items. This evaluates the policy and learner model under stated assumptions, not real learning.
+
+### Subtopics (concepts) — 2026-10-14 (no Gemini calls)
+- `GET /api/topics` returns per topic up to 8 **concepts**, merged from the chunks' ingestion concept labels (`conceptKey`: case, punctuation, spacing and simple plurals ignored), most-taught first, each with ≤ 2 citations. Shown as chips on /sources.
+- Real course: all 5 topics got sensible concepts (e.g. Performance Metrics → turnaround, response and waiting time, CPU utilization, throughput); "CPU bursts"/"CPU burst" and "Turn Around time"/"Turnaround time" merge.
+
+### Module 16 — Accounts — 2026-10-14
+- `POST /api/auth/signup|login|logout`, `GET /api/auth/session`; scrypt (node:crypto) hashes; HMAC-SHA256 session cookie (HttpOnly, SameSite=Lax, 7 days); migration `20261014200000_learner_auth` adds the nullable `Learner.passwordHash`.
+- Learner-scoped routes call `authorizeLearner` / `authorizeAssessment`: 401 unless the learner is an open (passwordless) profile or the session is theirs.
+- Verified against the running server: 200 with the cookie; 401 without it, with a forged cookie, and for a wrong password; 400 for a duplicate name; logout clears the session; accounts never listed.
+
+### Codebase audit — 2026-10-14 (fixes each with a regression test that fails on the old code)
+
+| # | Finding (evidence) | Status |
+|---|---|---|
+| 1 | Gemini calls had **no timeout**: the SDK applies one only if `httpOptions.timeout` is set (verified in `@google/genai` 2.29.1 source). A hung call blocked a request forever | **Fixed and verified:** `LLM_TIMEOUT_MS` (120 s); a live 1 ms timeout aborted and failed cleanly |
+| 2 | A **rejected key** (HTTP 400 `API_KEY_INVALID`) was neither rotated past nor explained (raw JSON) | **Fixed and verified live:** bad key alone → clear `config` error; bad key + valid keys → rotates and succeeds; unit test `isKeyRejected` |
+| 3 | **Key rotation thrash:** concurrent 429s on one key each rotated, cycling back to it | **Fixed, not fully verified** (needs concurrent real 429s): rotate only if the failed call's key is still current |
+| 4 | **Double submit** graded a quiz twice (check-then-write race; the old code crashed on `Attempt` uniqueness or doubled mastery) | **Fixed and verified:** atomic claim; concurrent submits → one 200, one 409, mastery once per question |
+| 5 | A failed tutor turn left an **unanswered USER message** in the history | **Fixed and verified:** messages stored only once answered |
+| 6 | **Re-ingesting** a source dropped its chunks' topic tags (they vanished from quizzes and concepts until a rebuild) | **Fixed and verified:** new chunks are tagged to the nearest stored topic vector (no Gemini call) |
+| 7 | "No question survived verification" and "no usable topics" came back as **500 internal** | **Fixed:** `llm_error` (502) |
+| 8 | A blank SHORT answer was reported as "could not be graded" | **Fixed and verified:** counts as unanswered |
+| 9 | Dashboard "revise" chips for slides **downloaded the .pptx** | **Fixed:** slides show the excerpt on hover |
+| 10 | `npm run lint` failed (4 × `react-hooks/set-state-in-effect`) | **Fixed without disabling the rule:** effects only set state in async callbacks; the quiz deep link derives its initial state from the URL |
+| 11 | Docs described unbuilt parts as planned-and-current (`tools/eval/ragas.py`, `tools/sim`, lowercase tutor schema, one video call, "no auth") and 10 teammate design notes describe pgvector/hybrid search | **Fixed:** ARCHITECTURE §0 lists every deviation; teammate notes carry a "proposal, not implemented" banner; API_SPEC and README updated |
+
+**Verified OK (no change needed):** the SDK never retries on its own (we never set `retryOptions`), so the limiter counts every request; per-request `httpOptions` merges with the client's; all colour tokens used by the UI exist; registry ↔ route files.
+
+**Open risks (not fixed; need a decision):**
+- No roles: anyone who can reach the server can upload/delete sources and force a rebuild (erases learners' progress on those topics). Needs an owner/admin role (**requires approval**).
+- Login attempts aren't rate-limited.
+- `applyObservation` is read-modify-write under READ COMMITTED: two simultaneous updates of the same learner+topic (a quiz submit and a chat turn at the same instant) could lose one.
+- A DB failure halfway through writing a submit's attempts leaves a partial quiz; a retry after 5 min could duplicate the written part.
+- The "already asked" stem list sent to the quiz generator grows with every quiz (token cost).
+- Retrieval scores every chunk of the course in JS per query: fine at hundreds to low thousands of chunks, by design (no pgvector).
+
+**Runs:** `npm run typecheck` 7/7 · `npm run lint` clean · `npm run test` 270 pass · `npm run build` 0 warnings · `npm run test:e2e` 35 pass (production server) · real browser 8/8, 0 console errors · live Gemini: generate ×2 models, embed, timeout, bad key, key rotation (≈ 6 requests).
 
 ## 5. Accuracy / eval metrics (filled in Module 15)
 

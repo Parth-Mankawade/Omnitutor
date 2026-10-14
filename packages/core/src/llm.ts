@@ -34,12 +34,16 @@ function getClient(): GoogleGenAI {
   return c;
 }
 
-/** Moves to the next key; false if there is only one. */
-function rotateKey(): boolean {
+/**
+ * Moves past key `failed` (the index the failing call used); false if there is only one key.
+ * Concurrent calls that fail on the same key rotate once, not once each (which would cycle back to it).
+ */
+function rotateKey(failed: number): boolean {
   const n = geminiKeys().length;
   if (n < 2) return false;
+  if (keyIndex % n !== failed % n) return true; // another call already moved on
   keyIndex = (keyIndex + 1) % n;
-  console.warn(`[llm] Gemini key ${((keyIndex + n - 1) % n) + 1}/${n} hit its quota; switched to key ${keyIndex + 1}/${n}`);
+  console.warn(`[llm] Gemini key ${((keyIndex + n - 1) % n) + 1}/${n} is out of quota or was rejected; switched to key ${keyIndex + 1}/${n}`);
   return true;
 }
 
@@ -54,8 +58,18 @@ export function modelFor(role: ModelRole): string {
   return envModel(role === "fast" ? "LLM_MODEL_FAST" : "LLM_MODEL_STRONG");
 }
 
+/** Google refused the key itself (invalid, revoked, or not allowed for this model/project). */
+export function isKeyRejected(e: unknown): boolean {
+  if (!(e instanceof ApiError)) return false;
+  return e.status === 401 || e.status === 403 || (e.status === 400 && /API_KEY_INVALID|API key not valid|API key expired/i.test(e.message));
+}
+
 function toLlmError(e: unknown): LlmError {
   if (e instanceof LlmError) return e;
+  if (isKeyRejected(e)) {
+    const reason = /API_KEY_INVALID|not valid/i.test((e as ApiError).message) ? "invalid" : /expired/i.test((e as ApiError).message) ? "expired" : "not permitted";
+    return new LlmError("config", `Gemini rejected the API key (HTTP ${(e as ApiError).status}, ${reason}). Check APP_GEMINI_API_KEY / APP_GEMINI_API_KEYS in .env.`, e);
+  }
   if (e instanceof ApiError) {
     return new LlmError(e.status === 429 ? "rate_limit" : "api", `HTTP ${e.status}: ${e.message}`, e);
   }
@@ -63,6 +77,15 @@ function toLlmError(e: unknown): LlmError {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Per-request timeout (ms) for Gemini HTTP calls; LLM_TIMEOUT_MS overrides. Without one the SDK waits
+ * forever on a hung connection. A timeout surfaces as a network error (retried once, like a 5xx).
+ */
+export function requestTimeoutMs(env: NodeJS.ProcessEnv = process.env): number {
+  const v = Number(env.LLM_TIMEOUT_MS);
+  return Number.isFinite(v) && v > 0 ? Math.floor(v) : 120_000;
+}
 
 /** Gemini's 429 body carries a RetryInfo delay ("retryDelay": "36s" / "Please retry in 36.4s"). */
 export function retryDelayMs(e: unknown): number | undefined {
@@ -97,6 +120,7 @@ async function limited<T>(
   let rotations = 0;
   for (let attempt = 1; ; attempt++) {
     const reservation = await limiter(kind).acquire(requests, estTokens);
+    const usedKey = keyIndex; // `call` picks its client synchronously from the current key
     try {
       const { value, inputTokens } = await call();
       reservation.settle(inputTokens);
@@ -104,9 +128,15 @@ async function limited<T>(
     } catch (e) {
       reservation.settle();
       const err = toLlmError(e);
+      // A rejected key (revoked, invalid): try the next configured key before giving up.
+      if (isKeyRejected(e) && rotations < geminiKeys().length - 1 && rotateKey(usedKey)) {
+        rotations++;
+        attempt--;
+        continue;
+      }
       if (err.kind === "rate_limit" && err.cause !== "local-limit") {
         // Another key first (no waiting), then Google's suggested delay.
-        if (rotations < geminiKeys().length - 1 && rotateKey()) {
+        if (rotations < geminiKeys().length - 1 && rotateKey(usedKey)) {
           rotations++;
           attempt--;
           continue;
@@ -121,7 +151,7 @@ async function limited<T>(
       // 503 "high demand" spikes get more patience (and the other key) than other 5xx.
       const maxAttempts = status === 503 ? 3 : 2;
       if (err.kind === "api" && attempt < maxAttempts && (status === undefined || status >= 500)) {
-        if (status === 503) rotateKey();
+        if (status === 503) rotateKey(usedKey);
         await sleep(attempt === 1 ? 2_000 : 5_000);
         continue;
       }
@@ -197,7 +227,7 @@ async function generateWith<S extends z.ZodType>(
       const r = await getClient().models.generateContent({
         model,
         contents: [{ role: "user", parts: opts.parts }],
-        config: { systemInstruction: opts.system, temperature: opts.temperature, responseMimeType: "application/json", responseJsonSchema },
+        config: { systemInstruction: opts.system, temperature: opts.temperature, responseMimeType: "application/json", responseJsonSchema, httpOptions: { timeout: requestTimeoutMs() } },
       });
       return { value: r, inputTokens: r.usageMetadata?.promptTokenCount };
     });
@@ -275,7 +305,7 @@ export async function embed(texts: string[], taskType: EmbedTask): Promise<numbe
     const contents = b.map((i) => texts[i]);
     const est = contents.reduce((s, t) => s + estimateTextTokens(t), 0);
     const vectors = await limited("embed", b.length, est, async () => {
-      const res = await getClient().models.embedContent({ model, contents, config: { taskType, outputDimensionality: EMBED_DIM } });
+      const res = await getClient().models.embedContent({ model, contents, config: { taskType, outputDimensionality: EMBED_DIM, httpOptions: { timeout: requestTimeoutMs() } } });
       return { value: (res.embeddings ?? []).map((e) => e.values ?? []) };
     });
     if (vectors.length !== b.length || vectors.some((v) => v.length !== EMBED_DIM)) {

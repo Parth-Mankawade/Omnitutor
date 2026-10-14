@@ -75,9 +75,9 @@ export default function DashboardPage() {
   const [view, setView] = useState<MasteryView | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // The learner only changes by signing out, which unmounts this page (LearnerGate): no reset needed.
   useEffect(() => {
     if (!learner) return;
-    setView(null);
     api.mastery(learner.id).then(setView).catch((e) => setError(errorText(e)));
   }, [learner]);
 
@@ -170,11 +170,18 @@ export default function DashboardPage() {
                     {w.citations.length > 0 && (
                       <div className="flex flex-wrap gap-2">
                         <span className="text-[10px] uppercase tracking-widest text-white/40">Revise</span>
-                        {w.citations.map((c) => (
-                          <a key={c.chunkId} href={citationHref(c)} target="_blank" rel="noreferrer" title={c.excerpt} className="rounded border border-white/15 px-1.5 py-0.5 hover:bg-white/10">
-                            <Locator citation={c} />
-                          </a>
-                        ))}
+                        {w.citations.map((c) =>
+                          // A browser can't show a slide of a .pptx (the link would download the deck): slides show their excerpt on hover.
+                          c.sourceType === "PPTX" ? (
+                            <span key={c.chunkId} title={`${c.title ? `${c.title}: ` : ""}${c.excerpt}`} className="cursor-help rounded border border-white/15 px-1.5 py-0.5">
+                              <Locator citation={c} />
+                            </span>
+                          ) : (
+                            <a key={c.chunkId} href={citationHref(c)} target="_blank" rel="noreferrer" title={c.excerpt} className="rounded border border-white/15 px-1.5 py-0.5 hover:bg-white/10">
+                              <Locator citation={c} />
+                            </a>
+                          ),
+                        )}
                       </div>
                     )}
                   </div>
