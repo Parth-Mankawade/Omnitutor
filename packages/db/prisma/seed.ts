@@ -10,7 +10,8 @@ async function main() {
   const course = await prisma.course.upsert({
     where: { id: "demo-course" },
     update: {},
-    create: { id: "demo-course", name: "Operating Systems: CPU Scheduling" },
+    // The name is prompt context for ingestion and course build: it must describe the real material.
+    create: { id: "demo-course", name: process.env.COURSE_NAME?.trim() || "My course" },
   });
   const learner = await prisma.learner.upsert({
     where: { id: "demo-learner" },
