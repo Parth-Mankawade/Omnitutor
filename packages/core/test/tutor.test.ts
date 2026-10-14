@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { TutorAnswer, type Citation } from "@sc/schemas";
-import { groundAnswer, refusalTau, tutorInput, type TutorModelOutput } from "../src/tutor";
+import { SMALL_TALK, groundAnswer, refusalTau, tutorInput, type TutorModelOutput } from "../src/tutor";
 import type { RetrievedChunk } from "../src/retrieve";
 
 const cit = (n: number): Citation => ({ chunkId: `c${n}`, sourceId: "s", filename: "notes.pdf", kind: "TEXT", title: null, excerpt: `excerpt ${n}`, sourceType: "PDF", page: n });
@@ -75,5 +75,12 @@ describe("tutorInput / refusalTau", () => {
     assert.equal(refusalTau({ REFUSAL_TAU: "0.62" }), 0.62);
     assert.equal(refusalTau({ REFUSAL_TAU: "abc" }), 0.6);
     assert.equal(refusalTau({}), 0.6);
+  });
+});
+
+describe("SMALL_TALK", () => {
+  it("whole-message greetings/thanks only; anything with a question goes to the tutor", () => {
+    for (const t of ["hello", "Hi!", "thanks", "thank you so much", "ok", "good morning"]) assert.ok(SMALL_TALK.test(t), t);
+    for (const t of ["hello, what is a dispatcher?", "hi explain round robin", "okay so why does it go to ready?"]) assert.ok(!SMALL_TALK.test(t), t);
   });
 });

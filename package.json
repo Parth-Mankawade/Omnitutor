@@ -27,7 +27,17 @@
     "test:e2e": "npm run test:e2e -w @sc/e2e",
     "stage1:pdf": "npm run stage1:pdf -w @sc/e2e",
     "stage1:video": "npm run stage1:video -w @sc/e2e",
-    "stage1:retrieval": "npm run stage1:retrieval -w @sc/e2e"
+    "stage1:retrieval": "npm run stage1:retrieval -w @sc/e2e",
+    "stage1:pptx": "npm run stage1:pptx -w @sc/e2e",
+    "stage1:build": "npm run stage1:build -w @sc/e2e",
+    "stage1:tutor": "npm run stage1:tutor -w @sc/e2e",
+    "stage1:quiz": "npm run stage1:quiz -w @sc/e2e",
+    "stage1:grading": "npm run stage1:grading -w @sc/e2e",
+    "stage1:mastery": "npm run stage1:mastery -w @sc/e2e",
+    "holdout:retrieval": "npm run holdout:retrieval -w @sc/e2e",
+    "holdout:generalize": "npm run holdout:generalize -w @sc/e2e",
+    "eval:rag": "npm run eval:rag -w @sc/e2e",
+    "eval:sim": "npm run eval:sim -w @sc/e2e"
   },
   "devDependencies": {
     "@types/node": "^20",

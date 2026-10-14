@@ -1,15 +1,12 @@
 import Link from "next/link";
-import type { SourceStatus, TutorBlock } from "@sc/schemas";
 import { LedgerReveal } from "@/components/ledger-reveal";
-import { Locator } from "@/components/locator";
-import { citations, sources, tutorThread } from "@/lib/fixtures";
-import { formatDate } from "@/lib/format";
+import { LiveGrounding, LiveSources, LiveStats } from "@/components/live-course";
 
 /**
  * The landing surface.
  *
- * Everything on this page is derived from `lib/fixtures`, which is parsed
- * through `@sc/schemas` at import. There is no local mock data and no shape
+ * The evidence sections are live (components/live-course.tsx): the real sources,
+ * topics and the selected learner's latest grounded answer. There is no local mock data and no shape
  * declared here: the specimen, the ledger rows and the grounding comparison
  * are all projections of the contract, so a change to the contract shows up on
  * the first screen rather than in a stale copy of it.
@@ -20,39 +17,6 @@ import { formatDate } from "@/lib/format";
 
 /* The route is the seed for the whole page, so the lookups live here rather
    than inside the components below. */
-
-const heroCitation = citations.find((entry) => entry.sourceType === "VIDEO");
-
-const evidenceBlocks: TutorBlock[] = tutorThread.flatMap((message) =>
-  message.role === "ASSISTANT" ? (message.blocks ?? []) : [],
-);
-
-const materialBlock = evidenceBlocks.find((block) => block.origin === "material");
-const outsideBlock = evidenceBlocks.find((block) => block.origin === "outside");
-
-/** Sources paired with a citation, so each row can show what it can prove. */
-const ledgerRows = sources.flatMap((source) => {
-  const citation = citations.find((entry) => entry.sourceId === source.id);
-  return citation === undefined ? [] : [{ source, citation }];
-});
-
-const STATUS_LABEL: Record<SourceStatus, string> = {
-  PENDING: "Waiting",
-  PROCESSING: "Processing",
-  READY: "Ready",
-  FAILED: "Failed",
-};
-
-const STATUS_COLOR: Record<SourceStatus, string> = {
-  PENDING: "text-pending",
-  PROCESSING: "text-pending",
-  READY: "text-verified",
-  FAILED: "text-proof",
-};
-
-function sourceName(sourceId: string): string {
-  return sources.find((source) => source.id === sourceId)?.filename ?? sourceId;
-}
 
 const NEXT_STEPS = [
   {
@@ -103,20 +67,7 @@ export default function LandingPage() {
             </Link>
           </div>
 
-          {heroCitation !== undefined && (
-            <figure className="lg:col-span-4 lg:col-start-9">
-              <div className="h-px w-full bg-rule-strong" />
-              <figcaption className="mt-4 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                <Locator citation={heroCitation} />
-                <span className="text-meta text-graphite">
-                  {sourceName(heroCitation.sourceId)}
-                </span>
-              </figcaption>
-              <blockquote className="mt-4 text-body text-ink">
-                {heroCitation.excerpt}
-              </blockquote>
-            </figure>
-          )}
+          <LiveStats />
         </div>
       </section>
 
@@ -155,50 +106,7 @@ export default function LandingPage() {
               </div>
             </div>
 
-            {materialBlock !== undefined && outsideBlock !== undefined && (
-              <div className="mt-14 grid grid-cols-1 gap-8 lg:grid-cols-12">
-                <div
-                  data-reveal="item"
-                  className="rounded-panel border border-rule bg-surface p-6 sm:p-8 lg:col-span-6"
-                >
-                  <p className="text-meta font-medium text-verified">
-                    From your material
-                  </p>
-                  <p className="measure mt-4 text-body text-ink">
-                    {materialBlock.text}
-                  </p>
-                  <ul className="mt-6 space-y-2">
-                    {materialBlock.citations.map((citation) => (
-                      <li
-                        key={citation.chunkId}
-                        data-reveal="locator"
-                        className="flex flex-wrap items-baseline gap-x-3 gap-y-1"
-                      >
-                        <Locator citation={citation} />
-                        <span className="text-meta text-graphite">
-                          {sourceName(citation.sourceId)}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-
-                <div
-                  data-reveal="item"
-                  className="rounded-panel border border-dashed border-rule-strong p-6 sm:p-8 lg:col-span-5 lg:col-start-8"
-                >
-                  <p className="text-meta font-medium text-graphite">
-                    Outside the material
-                  </p>
-                  <p className="measure mt-4 text-body text-graphite">
-                    {outsideBlock.text}
-                  </p>
-                  <p className="mt-6 text-meta text-graphite">
-                    No citation, because none of your sources support it.
-                  </p>
-                </div>
-              </div>
-            )}
+            <LiveGrounding />
           </div>
         </section>
 
@@ -228,44 +136,14 @@ export default function LandingPage() {
                   data-reveal="item"
                   className="measure mt-5 text-body text-graphite"
                 >
-                  An illustrative example: three sources, one question, why a
-                  short burst returns the CPU before the time quantum runs out.
-                  The locator is the part you can open.
+                  Every source you add is cut into units that keep their origin:
+                  a page, a slide or a timestamp. That locator is what each
+                  citation opens.
                 </p>
               </div>
             </div>
 
-            <ul className="mt-14">
-              {ledgerRows.map(({ source, citation }) => (
-                <li key={source.id} className="py-6">
-                  <div data-reveal="rule" className="h-px w-full bg-rule" />
-                  <div className="mt-6 grid grid-cols-1 gap-x-8 gap-y-3 lg:grid-cols-12">
-                    <div data-reveal="locator" className="lg:col-span-3">
-                      <Locator citation={citation} />
-                    </div>
-                    <div
-                      data-reveal="item"
-                      className="lg:col-span-8 lg:col-start-4"
-                    >
-                      <h3 className="font-display text-title text-ink">
-                        {source.filename}
-                      </h3>
-                      <p className="measure mt-3 text-body text-graphite">
-                        {citation.excerpt}
-                      </p>
-                      <p className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-1 text-meta tabular-nums text-graphite">
-                        <span>{source.type}</span>
-                        <span className={STATUS_COLOR[source.status]}>
-                          {STATUS_LABEL[source.status]}
-                        </span>
-                        <span>{source.chunkCount} chunks</span>
-                        <span>{formatDate(source.createdAt)}</span>
-                      </p>
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ul>
+            <LiveSources />
           </div>
         </section>
       </LedgerReveal>
@@ -314,13 +192,12 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* A colophon, not a footer bar. The specimens above are illustrative (lib/fixtures);
-          the learner's real material lives on /sources, /tutor, /quiz and /dashboard. */}
+      {/* A colophon, not a footer bar. */}
       <footer className="border-t border-rule px-4 py-8 sm:px-6">
         <div className="mx-auto flex w-full max-w-[68rem] flex-wrap items-baseline gap-x-6 gap-y-2 text-meta text-graphite">
           <p>Set in Fraunces, Instrument Sans and JetBrains Mono.</p>
           <p>
-            Examples on this page are illustrative. Your own course lives in{" "}
+            Everything on this page is read live from your course. Manage it in{" "}
             <Link href="/sources" className="text-ink underline-offset-2 hover:underline">Sources</Link>.
           </p>
         </div>

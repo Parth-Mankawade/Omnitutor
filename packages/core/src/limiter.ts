@@ -31,7 +31,9 @@ export function limitsFromEnv(kind: LimitKind, env: NodeJS.ProcessEnv = process.
     const v = Number(env[`${prefix}_${key}`]);
     return Number.isFinite(v) && v > 0 ? Math.floor(v) : fallback;
   };
-  return { rpm: n("RPM", d.rpm), tpm: n("TPM", d.tpm), rpd: n("RPD", d.rpd), concurrency: n("CONCURRENCY", d.concurrency) };
+  // Limits are per Gemini key; with several keys (APP_GEMINI_API_KEYS) the budget scales with them.
+  const keys = new Set([...(env.APP_GEMINI_API_KEYS ?? "").split(","), env.APP_GEMINI_API_KEY ?? ""].map((k) => k.trim()).filter(Boolean)).size || 1;
+  return { rpm: n("RPM", d.rpm * keys), tpm: n("TPM", d.tpm * keys), rpd: n("RPD", d.rpd * keys), concurrency: n("CONCURRENCY", d.concurrency) };
 }
 
 /** Gemini daily quotas reset at midnight Pacific time. */

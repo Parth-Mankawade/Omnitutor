@@ -11,14 +11,35 @@ export type Usage = { inputTokens: number; outputTokens: number };
 
 export const EMBED_DIM = 768;
 
-let client: GoogleGenAI | undefined;
+// Keys: APP_GEMINI_API_KEYS="k1,k2,…" and/or APP_GEMINI_API_KEY. When Google reports a key out of
+// quota (429), calls move to the next key. Explicit keys only: never the SDK's GEMINI_API_KEY fallback.
+const clients = new Map<string, GoogleGenAI>();
+let keyIndex = 0;
+
+export function geminiKeys(env: NodeJS.ProcessEnv = process.env): string[] {
+  const all = [...(env.APP_GEMINI_API_KEYS ?? "").split(","), env.APP_GEMINI_API_KEY ?? ""].map((k) => k.trim()).filter(Boolean);
+  return [...new Set(all)];
+}
 
 function getClient(): GoogleGenAI {
-  // Explicit key: never let the SDK fall back to a machine-wide GEMINI_API_KEY.
-  const apiKey = process.env.APP_GEMINI_API_KEY;
-  if (!apiKey) throw new LlmError("config", "APP_GEMINI_API_KEY is not set in .env");
-  client ??= new GoogleGenAI({ apiKey });
-  return client;
+  const keys = geminiKeys();
+  if (keys.length === 0) throw new LlmError("config", "No Gemini key: set APP_GEMINI_API_KEY (or APP_GEMINI_API_KEYS) in .env");
+  const key = keys[keyIndex % keys.length];
+  let c = clients.get(key);
+  if (!c) {
+    c = new GoogleGenAI({ apiKey: key });
+    clients.set(key, c);
+  }
+  return c;
+}
+
+/** Moves to the next key; false if there is only one. */
+function rotateKey(): boolean {
+  const n = geminiKeys().length;
+  if (n < 2) return false;
+  keyIndex = (keyIndex + 1) % n;
+  console.warn(`[llm] Gemini key ${((keyIndex + n - 1) % n) + 1}/${n} hit its quota; switched to key ${keyIndex + 1}/${n}`);
+  return true;
 }
 
 function envModel(name: "LLM_MODEL_FAST" | "LLM_MODEL_STRONG" | "EMBED_MODEL"): string {
@@ -71,6 +92,7 @@ async function limited<T>(
   estTokens: number,
   call: () => Promise<{ value: T; inputTokens?: number }>,
 ): Promise<T> {
+  let rotations = 0;
   for (let attempt = 1; ; attempt++) {
     const reservation = await limiter(kind).acquire(requests, estTokens);
     try {
@@ -80,9 +102,17 @@ async function limited<T>(
     } catch (e) {
       reservation.settle();
       const err = toLlmError(e);
-      if (err.kind === "rate_limit" && err.cause !== "local-limit" && attempt < 3) {
-        await sleep(Math.min(60_000, Math.max(5_000, retryDelayMs(e) ?? 15_000)));
-        continue;
+      if (err.kind === "rate_limit" && err.cause !== "local-limit") {
+        // Another key first (no waiting), then Google's suggested delay.
+        if (rotations < geminiKeys().length - 1 && rotateKey()) {
+          rotations++;
+          attempt--;
+          continue;
+        }
+        if (attempt < 3) {
+          await sleep(Math.min(60_000, Math.max(5_000, retryDelayMs(e) ?? 15_000)));
+          continue;
+        }
       }
       // Transient server/network failure (5xx, "overloaded", fetch failed): one retry.
       const status = e instanceof ApiError ? e.status : undefined;
