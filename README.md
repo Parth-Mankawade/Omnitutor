@@ -58,6 +58,17 @@ Production mode: `npm run build && npm run start -w @sc/web`.
 
 Sign in (or create an account) from the header. **Each account has its own private course**: the files it uploads, its topics, tutor history, quizzes and mastery map are visible only to that account. The server enforces this on every route (a signed HttpOnly session cookie; another account's course, file or data returns 401). Passwords are hashed with scrypt. Requests without a session (the eval scripts and e2e tests) use the shared demo course.
 
+## Features at a glance
+
+- **Private accounts and notebooks:** each student signs in; every notebook (one per subject) has its own files, topics, tutor history, quizzes, flashcards and mastery, enforced on the server.
+- **Onboarding:** four quick questions set the tutor's personality (friendly, funny, serious or concise; also the sampling temperature), explanation style, level and goal.
+- **A tutor that teaches:** explains in its own words with citations that open the exact PDF page, slide or video second; outside knowledge is labelled; off-material questions are declined or flagged.
+- **Course map:** an interactive mind map of topics, prerequisites and concepts, coloured by the student's measured mastery; every concept opens its source.
+- **Flashcards:** generated per topic from the topic's own excerpts, each checked by a second model and cited; spaced repetition (Leitner boxes); reviews update mastery.
+- **Verified quizzes and reports:** MCQ, short-answer and numerical questions verified by a second model, no repeats, cited feedback, misconceptions.
+- **Dashboard and study hub:** per-topic mastery from quizzes, tutor chats and flashcards; the home page shows what to do next.
+- **Evaluation page:** the measured RAGAS-style metrics and simulated-student results.
+
 ## How it works
 
 ```
@@ -95,31 +106,35 @@ Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · API contract: [docs/API
 
 ## Evaluation (team-built test sets, real Gemini)
 
-Test sets:
+Results are shown in the app on the **Evaluation** page (reports in `data/eval/`, regenerated with `npm run eval:rag` and `npm run eval:sim`).
+
+Test sets (58 questions, all in `data/demo/testset.*.json`):
 - **Stage-1:** 15 questions: 8 from real IIIT Nagpur OS exam papers, 7 written from the material.
 - **Holdout:** 36 questions written *after* retrieval was frozen: 4 verbatim exam questions, 16 new, and 16 off-material (unrelated, same course but not covered, and near-miss).
+- **Slides:** 7 questions on a team-made (synthetic) 10-slide deck; each also accepts the lecture-note page with the same fact.
 
-| Metric | Result |
-|---|---|
-| Faithfulness (claims in cited answer blocks supported by retrieved context) | **0.98** |
-| Answer relevancy | **0.84** |
-| Context precision / recall | **0.86 / 0.92** |
-| Citation accuracy (answer cites the expected page/slide/time) | **0.97** |
-| Off-material refusal recall / precision · false refusals | **0.90 / 1.00 · 0 of 30** |
-| Retrieval hit@1, holdout (random ranking: 10%) | **95%** |
-| Extraction ground truth: PDF · PPTX (2 real decks) · video | 47/47 · 21/21 + 15/15 · 12/12 facts |
+Latest run (2026-10-15, current tutor with the teaching prompt; tutor `gemini-3.1-flash-lite`, judged by a different model, `gemini-3.5-flash-lite`):
 
-**Faithfulness, relevancy and context precision/recall** use the **RAGAS metric definitions**, computed with a Gemini judge (`npm run eval:rag`).
+| Metric | All | PDF | Slides | Video |
+|---|---|---|---|---|
+| Faithfulness (claims in the cited part supported by the retrieved excerpts) | **0.95** | 0.96 | 0.86 | 1.00 |
+| Answer relevancy | **0.85** | 0.85 | 0.85 | 0.85 |
+| Context precision / recall | **0.92 / 0.94** | 0.93 / 0.93 | 0.97 / 0.90 | 0.87 / 1.00 |
+| Citation accuracy (cites an expected page/slide/time) | **1.00** | 1.00 | 1.00 | 1.00 |
 
-**Simulated students** (`npm run eval:sim`): 4 hidden-knowledge profiles × 500 students × 3 sessions, comparing our adaptive policy with random quizzing. The simulated students follow a *different* learning model than the app assumes.
+Off-material: **17 of 21 declined**; the other 4 (numerical problems for algorithms the material doesn't teach) were answered but flagged *partly covered*, with the uncovered part labelled outside knowledge. **0 of 37** answerable questions wrongly declined; refusal precision 1.00. Faithfulness over the whole answer (including the labelled outside-knowledge teaching) is 0.61, as expected for a tutor that adds analogies and examples. Earlier: retrieval hit@1 on the holdout 95% (random ranking: 10%); extraction ground truth PDF 47/47, PPTX 21/21 + 15/15, video 12/12 facts.
+
+**Faithfulness, relevancy and context precision/recall** use the **RAGAS metric definitions**, computed with a Gemini judge that is a different model from the tutor's (`npm run eval:rag`); not the ragas package itself.
+
+**Simulated students** (`npm run eval:sim`): 4 hidden-knowledge profiles × 500 students × 3 sessions, the app's own question selection and mastery model against random quizzing. The simulated students follow a *different* learning model than the app assumes.
 
 | | Adaptive | Random |
 |---|---|---|
-| Topics learned (novice / basics-only) | **74% / 48%** | 64% / 42% |
+| Topics learned (novice / basics-only) | **73% / 48%** | 64% / 41% |
 | Mastery estimation error after 3 sessions | **lower in all 4 profiles** | |
 | Question repetition rate | **0%** | 30% |
 
-**Reproduce:** `npm run test` (unit + DB), `npm run test:e2e` (against a running server; spends no quota), and the real-data checks in `tools/e2e` (`stage1:*`, `holdout:*`, `eval:*`).
+**Reproduce:** `npm run test` (unit + DB), `npm run test:e2e` (against a running server; spends no quota), `npm run eval:rag` / `npm run eval:sim`, and the real-data checks in `tools/e2e` (`stage1:*`, `holdout:*`).
 
 ## Honest limitations
 

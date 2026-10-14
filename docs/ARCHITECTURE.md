@@ -18,6 +18,9 @@ This document is the shared reference for both teammates. The design is frozen: 
 | One video call per file | One call per **≤ 60 s window** (`videoMetadata` offsets) | Timestamps stay accurate (mean error 0.3 s on the real video) |
 | Blind verify with the generating model | Verify with a **different model** (`LLM_MODEL_VERIFY`, cross-model) | Track D lists cross-model verification; falls back to `LLM_MODEL_FAST` if unset |
 | `tools/eval/ragas.py`, `tools/eval/score.ts`, `tools/sim` (teammate) | `tools/e2e/src/eval-rag.ts` (RAGAS metric **definitions** re-implemented with a Gemini judge; not the `ragas` package) and `tools/e2e/src/sim-students.ts` (no LLM) | The teammate deliverables did not arrive; one TypeScript toolchain |
+| One shared course; learner picker | **Notebooks** (Module 18): each account owns any number of private courses ("notebooks"); one is active (`Learner.activeCourseId`), and every course-scoped route resolves it through `courseFor()`, so sources, topics, tutor history, quizzes and mastery are per notebook. Another account's notebook, file or data returns 401. Requests without a session use the shared evaluation course | Users asked for private, NotebookLM-style notebooks |
+| Tutor adapts to mastery only | **Onboarding profile** (Module 17): tone (friendly / funny / serious / concise, which also sets the sampling temperature 0.45 / 0.8 / 0.15 / 0.2), explanation style, prior level and goal; added to the tutor's system prompt. The tutor prompt (v2) now *teaches*: it explains in its own words with cited material blocks and labelled outside analogies/examples | Personalised tutoring is the core of Track D |
+| Evaluation numbers in docs only | **Evaluation page** (Module 19): `npm run eval:rag` / `eval:sim` write validated reports to `data/eval/` (in the repo); `GET /api/eval/report` serves them and `/evaluation` shows the metric matrix (overall × PDF / slides / video × test set), every question, and the simulator. The judge is `LLM_MODEL_VERIFY`, a different model from the tutor's | Track D requirement 5; judges can see the measured results |
 | One Gemini key | `APP_GEMINI_API_KEYS` rotation on 429 or a rejected key, `LLM_MODEL_FALLBACK` on 5xx/429/404, per-request timeout `LLM_TIMEOUT_MS` (120 s) | Free-tier quotas and overloaded models were the main failure mode in testing |
 
 The teammate's early design notes (`docs/product-requirements.md`, `system-architecture.md`, `technical-design.md`, `database-and-rag.md`, `api-contracts.md`, `delivery-plan.md`, `development-deployment.md`, `evaluation.md`, `security-privacy.md`, `glossary-and-decisions.md`) describe a **different, unbuilt design** (pgvector, full-text hybrid search, per-course authorization). Each carries a banner saying so; this file and [API_SPEC.md](API_SPEC.md) are authoritative.
@@ -311,7 +314,7 @@ Full details, examples and errors: [API_SPEC.md](API_SPEC.md). Postman: `docs/po
 
 ## 9. Evaluation
 
-*Planned:* `tools/eval/ragas.py` + `score.ts` + `tools/sim` from the teammate. *Built* (see §0):
+*Planned:* `tools/eval/ragas.py` + `score.ts` + `tools/sim` from the teammate. *Built* (see §0). Results: the `/evaluation` page (reports in `data/eval/`, validated against `RagReport` / `SimReport` in `@sc/schemas`; a report that fails validation is reported, never shown):
 
 - **Test sets:** `data/demo/testset.stage1.json` (team-built, with known page/slide/timestamp locations and off-material questions) plus the holdout set from the overfitting audit (`tools/e2e/holdout/`).
 - `npm run eval:rag` (`tools/e2e/src/eval-rag.ts`) calls `/api/eval/answer` and scores **faithfulness, answer relevancy, context precision, context recall** using the RAGAS definitions with a Gemini judge (cached), plus refusal precision.

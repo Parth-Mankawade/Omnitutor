@@ -103,7 +103,7 @@ export default function TutorPage() {
   }
 
   return (
-    <div className="flex h-[calc(100dvh-3.5rem)] overflow-hidden bg-paper">
+    <div className="flex h-[calc(100dvh-4rem)] overflow-hidden bg-paper">
       {/* Chat area */}
       <section className="flex h-full w-full flex-col border-r border-rule lg:w-[60%]">
         <header className="flex items-center justify-between border-b border-rule bg-surface p-6">

@@ -94,14 +94,15 @@ export function AccountControl() {
 }
 
 /** Pages that need an account: personal data (tutor, quiz, report, dashboard) and the course itself (sources). */
-const PRIVATE = ["/tutor", "/quiz", "/dashboard", "/sources", "/onboarding"];
+const PRIVATE = ["/tutor", "/quiz", "/dashboard", "/sources", "/onboarding", "/map", "/flashcards"];
 
 /** Shows a sign-in prompt instead of a private page when nobody is signed in. */
 export function LearnerGate({ children }: { children: ReactNode }) {
   const { learner, ready } = useLearner();
   const pathname = usePathname();
   const isPrivate = PRIVATE.some((p) => pathname === p || pathname.startsWith(`${p}/`));
-  if (!isPrivate || learner) return children;
+  // Keyed by path: each page fades in on navigation (CSS .page-in; off under prefers-reduced-motion).
+  if (!isPrivate || learner) return <div key={pathname} className="page-in flex flex-1 flex-col">{children}</div>;
   if (!ready) return <main className="mx-auto w-full max-w-3xl p-8 text-graphite">Checking your session…</main>;
   return (
     <main className="mx-auto w-full max-w-md px-4 py-20 text-center">

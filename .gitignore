@@ -34,6 +34,10 @@ coverage/
 # demo dataset (lecture video, textbook PDF, slide deck); too large for git
 /data/demo/*
 !/data/demo/README.md
+# the evaluation test sets are inputs to npm run eval:rag: keep them in the repo
+!/data/demo/testset.stage1.json
+!/data/demo/testset.holdout.json
+!/data/demo/testset.slides.json
 
 # Gemini response cache + usage ledger (local only)
 /data/cache/

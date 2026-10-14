@@ -142,3 +142,61 @@ export function LiveSources() {
     </ul>
   );
 }
+
+/** Hero call to action: signed out → create an account; signed in → straight back to studying. */
+export function HeroCta() {
+  const { learner, ready } = useLearner();
+  if (!ready) return <span className="mt-9 inline-flex min-h-11 w-44 animate-pulse rounded-card bg-surface" aria-hidden="true" />;
+  return (
+    <Link
+      href={learner ? "/tutor" : "/login"}
+      className="mt-9 inline-flex min-h-11 items-center rounded-card bg-ink px-5 text-body font-medium text-paper transition-colors duration-200 ease-ledger hover:bg-ink/85"
+    >
+      {learner ? "Continue studying" : "Create your free account"}
+    </Link>
+  );
+}
+
+type Hub = { sources: number; topics: number; due: number; cards: number; needsDiagnostic: boolean; weak: number };
+
+/** Signed-in study hub: where to go next, with live counts from the active notebook. */
+export function StudyHub() {
+  const { learner } = useLearner();
+  const [hub, setHub] = useState<Hub | null>(null);
+  useEffect(() => {
+    if (!learner) return;
+    Promise.all([api.listSources(), api.listTopics(), api.listFlashcards(), api.mastery(learner.id)])
+      .then(([s, t, f, m]) => setHub({ sources: s.length, topics: t.length, due: f.due, cards: f.total, needsDiagnostic: m.needsDiagnostic, weak: m.weakTopics.length }))
+      .catch(() => setHub(null));
+  }, [learner]);
+  if (!learner || !hub) return null;
+  const empty = hub.sources === 0;
+  const tiles = [
+    { href: "/sources", emoji: "📚", title: empty ? "Add your material" : "Sources", text: empty ? "Upload a PDF, slides or a lecture video to start" : `${hub.sources} file${hub.sources === 1 ? "" : "s"} · ${hub.topics} topics`, accent: empty },
+    { href: "/tutor", emoji: "💬", title: "Ask your tutor", text: "Explanations from your material, with sources", accent: false },
+    { href: hub.needsDiagnostic ? "/quiz?kind=DIAGNOSTIC" : "/quiz", emoji: "🎯", title: hub.needsDiagnostic ? "Take the diagnostic" : "Quiz yourself", text: hub.needsDiagnostic ? "One question per topic to calibrate your map" : hub.weak ? `${hub.weak} weak topic${hub.weak === 1 ? "" : "s"} to work on` : "Adaptive questions at your level", accent: !empty && hub.needsDiagnostic },
+    { href: "/flashcards", emoji: "🃏", title: "Flashcards", text: hub.cards ? `${hub.due} due now · ${hub.cards} cards` : "Make verified cards per topic", accent: hub.due > 0 },
+    { href: "/map", emoji: "🗺️", title: "Course map", text: "Topics, concepts and your mastery at a glance", accent: false },
+    { href: "/dashboard", emoji: "📈", title: "Your progress", text: "Mastery per topic and what changed", accent: false },
+  ];
+  return (
+    <section aria-labelledby="hub-title" className="px-4 pt-10 sm:px-6">
+      <div className="mx-auto w-full max-w-[68rem]">
+        <h2 id="hub-title" className="font-display text-title text-ink">Hi {learner.name}, pick up where you left off</h2>
+        <ul className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {tiles.map((t) => (
+            <li key={t.title}>
+              <Link href={t.href} className={`group flex h-full items-start gap-4 rounded-2xl border p-5 transition-all hover:-translate-y-0.5 hover:shadow-md ${t.accent ? "border-proof bg-proof-ground" : "border-rule bg-surface hover:border-ink"}`}>
+                <span className="text-2xl" aria-hidden="true">{t.emoji}</span>
+                <span>
+                  <span className="block font-medium text-ink">{t.title} <span aria-hidden="true" className="inline-block transition-transform group-hover:translate-x-0.5">→</span></span>
+                  <span className="mt-1 block text-sm text-graphite">{t.text}</span>
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  );
+}

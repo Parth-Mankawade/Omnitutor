@@ -58,6 +58,7 @@ enum AssessmentStatus {
 enum MasterySource {
   QUIZ
   CHAT
+  FLASHCARD
 }
 
 enum ChatRole {
@@ -76,12 +77,15 @@ enum Coverage {
 model Course {
   id        String   @id @default(cuid())
   name      String
-  // set = the private course of that account (one per account); null = shared course (demo, tools, tests)
-  ownerId   String?  @unique
+  // set = a private notebook of that account (an account can own many); null = shared course (demo, tools, tests)
+  ownerId   String?
   owner     Learner? @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
 
+  @@index([ownerId])
+
   sources     Source[]
+  flashcards  Flashcard[]
   topics      Topic[]
   assessments Assessment[]
   chats       ChatMessage[]
@@ -159,6 +163,7 @@ model Topic {
   course        Course         @relation(fields: [courseId], references: [id], onDelete: Cascade)
   chunks        Chunk[]
   questions     Question[]
+  flashcards    Flashcard[]
   mastery       Mastery[]
   masteryEvents MasteryEvent[]
 
@@ -250,13 +255,15 @@ model Learner {
   passwordHash String?
   // onboarding answers (LearnerProfile in @sc/schemas): tutor tone, explanation style, level, goal; null = not onboarded
   profile      Json?
+  // the notebook (owned Course) this account is working in; validated on every read, so no FK
+  activeCourseId String?
   createdAt    DateTime @default(now())
 
   mastery       Mastery[]
   masteryEvents MasteryEvent[]
   assessments   Assessment[]
   chats         ChatMessage[]
-  ownedCourse   Course?
+  ownedCourses  Course[]
 }
 
 model Mastery {
@@ -314,4 +321,29 @@ model ChatMessage {
   masteryEvents MasteryEvent[]
 
   @@index([learnerId, createdAt])
+}
+
+// Module 21: flashcards of a notebook (Course), per topic, generated from that topic's excerpts and
+// verified by a second model. The review state (Leitner box, next due time) lives on the card: a
+// notebook belongs to one account.
+model Flashcard {
+  id             String    @id @default(cuid())
+  courseId       String
+  topicId        String
+  front          String
+  back           String
+  frontHash      String // normalised front: no duplicate cards in a topic
+  sourceChunkIds String[]
+  box            Int       @default(1) // Leitner box 1..5
+  dueAt          DateTime  @default(now())
+  reviews        Int       @default(0)
+  lapses         Int       @default(0)
+  lastReviewedAt DateTime?
+  createdAt      DateTime  @default(now())
+
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  topic  Topic  @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@unique([topicId, frontHash])
+  @@index([courseId, dueAt])
 }

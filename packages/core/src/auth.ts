@@ -10,9 +10,12 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { prisma, type Learner as LearnerRow } from "@sc/db";
 import type { Credentials, Learner } from "@sc/schemas";
-import { DEFAULT_COURSE_ID, requireCourse } from "./course";
+import { requireCourse } from "./course";
 import { AppError, badRequest, notFound, notReady } from "./errors";
 import { repoRoot } from "./storage";
+
+/** Name of the empty notebook every new account starts with (renamed by creating named ones). */
+export const FIRST_NOTEBOOK_NAME = "My first notebook";
 
 export const SESSION_COOKIE = "omnitutor_session";
 export const SESSION_TTL_S = 7 * 24 * 3600;
@@ -129,21 +132,28 @@ export async function courseFor(sessionLearnerId: string | null, requested?: str
   return ownCourse(sessionLearnerId);
 }
 
-/** The account's private course, created on first use (named like the default course, or COURSE_NAME). */
+/**
+ * The account's active notebook (an owned Course). The stored pointer is validated on every read; if
+ * it is missing or stale the newest owned notebook becomes active, and an account with none gets an
+ * empty first notebook named FIRST_NOTEBOOK_NAME. A per-account advisory lock makes two
+ * first requests at once create one notebook, not two.
+ */
 export async function ownCourse(learnerId: string): Promise<string> {
-  const existing = await prisma.course.findUnique({ where: { ownerId: learnerId }, select: { id: true } });
-  if (existing) return existing.id;
-  const learner = await prisma.learner.findUnique({ where: { id: learnerId }, select: { passwordHash: true } });
+  const learner = await prisma.learner.findUnique({ where: { id: learnerId }, select: { passwordHash: true, activeCourseId: true } });
   if (!learner?.passwordHash) throw unauthorized("Your session has expired. Sign in again.");
-  const name = process.env.COURSE_NAME?.trim() || (await prisma.course.findUnique({ where: { id: DEFAULT_COURSE_ID }, select: { name: true } }))?.name || "My course";
-  try {
-    return (await prisma.course.create({ data: { name, ownerId: learnerId }, select: { id: true } })).id;
-  } catch {
-    // Two first requests at once: the other one created it (ownerId is unique).
-    const raced = await prisma.course.findUnique({ where: { ownerId: learnerId }, select: { id: true } });
-    if (raced) return raced.id;
-    throw new AppError("internal", "Could not create your course.");
+  if (learner.activeCourseId) {
+    const active = await prisma.course.findFirst({ where: { id: learner.activeCourseId, ownerId: learnerId }, select: { id: true } });
+    if (active) return active.id;
   }
+  return prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${learnerId}))`;
+    const newest = await tx.course.findFirst({ where: { ownerId: learnerId }, orderBy: { createdAt: "desc" }, select: { id: true } });
+    // A clean, generic first notebook: nothing is inherited from the shared evaluation course.
+    const name = FIRST_NOTEBOOK_NAME;
+    const id = newest?.id ?? (await tx.course.create({ data: { name, ownerId: learnerId }, select: { id: true } })).id;
+    await tx.learner.update({ where: { id: learnerId }, data: { activeCourseId: id } });
+    return id;
+  });
 }
 
 /** Source routes (delete, ingest, file): the source's course must be accessible to this session (unknown source → the service's 404). */
