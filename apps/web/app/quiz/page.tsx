@@ -1,4 +1,5 @@
 "use client";
+import { GraduationCapIcon } from "@/components/icons";
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -70,8 +71,8 @@ export default function QuizPage() {
     return (
       <main className="min-h-screen flex items-center justify-center p-8 bg-paper">
         <div className="max-w-md w-full p-12 bg-surface border border-rule rounded-[3rem] shadow-xl text-center space-y-8">
-          <div className="w-20 h-20 bg-proof/10 text-proof rounded-full flex items-center justify-center mx-auto text-3xl">
-            🎓
+          <div className="w-20 h-20 bg-proof/10 text-proof rounded-full flex items-center justify-center mx-auto">
+            <GraduationCapIcon size={40} />
           </div>
           <div className="space-y-2">
             <h1 className="text-3xl font-display font-bold text-ink">Session Complete</h1>

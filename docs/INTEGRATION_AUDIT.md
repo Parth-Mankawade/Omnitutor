@@ -4,8 +4,6 @@ Audited: **2026-10-14**, repository at commit `2d5d93a` (Modules 0–3) plus unc
 Scope: every file under `apps/`, `packages/`, `tools/`, `docs/`, plus root config. `.env` was **not read** (only `.env.example`).
 Companion docs: [API_SPEC.md](API_SPEC.md) (endpoint contracts), [INGESTION_SPEC.md](INGESTION_SPEC.md) (pipeline).
 
-> **Status update (same day, after contract v1.1 + Module 4):** §1–§10 below are the original audit, kept as a record. What has since been fixed, what's still open, and new findings are in **[§11 Resolution log](#11-resolution-log-contract-v11--module-4-2026-10-14)**.
-
 ---
 
 ## 1. Evidence collected
@@ -319,80 +317,3 @@ The aim is a **vertical slice first**, so a real end-to-end demo exists early. P
 3. Gemini free-tier limits unknown (I-12).
 4. Video path unverified (I-11).
 5. Teammate sign-off on the contract plus §9 changes.
-
----
-
-## 11. Resolution log: contract v1.1 + Module 4 (2026-10-14)
-
-**Evidence for this section:**
-- `npm run test` → **162 pass** (schemas 103, client 16, core 43).
-- `npm run test:e2e` → **37 pass against the dev server and 37 against the production server** (`next build` + `next start`).
-- `next build` → 0 warnings.
-- Typecheck: 7/7 packages. Lint clean.
-
-### 11.1 Issues from §7
-
-| ID | Status | Resolution / evidence |
-|---|---|---|
-| I-01 client crashed on non-JSON errors | ✅ fixed | `@sc/client` maps HTML 404 / empty 405 to `ApiError("http_error")` (client tests + e2e "client maps a missing route"). The brief now uses the package, not a snippet |
-| I-02 global mock switch | ✅ fixed | `NEXT_PUBLIC_API_MODE=auto`: per-endpoint from registry `status`. A contract test fails if `status` disagrees with the route files, in both directions |
-| I-03 template paths, untyped queries | ✅ fixed | `paths.*` builders + `query` schemas in the registry; one test per endpoint checks builder ↔ pattern ↔ query schema |
-| I-04 health/files outside the registry | ✅ fixed | `health` with `HealthResponse` (validated by the route); `NON_JSON_ROUTES.file` |
-| I-05 success status unspecified | ✅ fixed | 200 everywhere; `API_ERROR_STATUS` in the contract; responses validated server-side by `json()` |
-| I-06 report lacked MCQ options | ✅ fixed | `AttemptResult.options` (+ refine: MCQ ⇔ non-null; response type = question type) |
-| I-07 inconsistent mock history | ✅ fixed | Mock timeline from planned BKT values; tests assert `n` = events, chained before/after, report ↔ events, chat ↔ events |
-| I-08 failed source stuck | 🟨 partly | `DELETE /api/sources/[id]` live (409 while PROCESSING). Retry endpoint + boot recovery: Module 5 |
-| I-09 repo-root vs cwd paths | ✅ fixed | `repoRoot()` / `resolveSourcePath()` (refuses paths outside `data/uploads`); e2e checks the file lands at the repo-root path |
-| I-10 uploads buffered in memory | ✅ fixed | Raw-body upload streamed to disk. **A 2 GiB chunked upload was rejected after 503 MiB** (e2e), and an oversize `Content-Length` is rejected before any body is read |
-| I-11 video path unverified | ⬜ open | Upload side verified with synthetic MP4s; Gemini video smoke still needs a real mp4 |
-| I-12 no Gemini limiter | ⬜ open | Must land before Module 5 (PDF ingestion) |
-| I-13 20-min limit unenforceable | ✅ fixed | ffmpeg-free MP4 `mvhd` parser; 20:00 accepted, 20:01 rejected. **Verified on synthetic MP4s only.** Run a real lecture file through upload when the dataset arrives |
-| I-14 unreliable browser MIME | ✅ fixed | Extension decides the type, content must match (magic bytes + structure); browser MIME ignored |
-| I-15 PPTX EMF/WMF images | ⬜ Module 6 | Decision Q18 adopted |
-| I-16 rebuild wipes mastery | ⬜ Module 9 | Decision Q9 adopted |
-| I-17 missing seed | ✅ fixed | `requireCourse()` → 409 `not_ready` "Run `npm run db:seed`" (core test) |
-| I-18 eval refusal consistency | ⬜ Module 10 | |
-| I-19 history lacks masteryUpdates | accepted | |
-| I-20 excerpt length | ⬜ Module 10 | Decision Q10 adopted (≤ 600) |
-| I-21 latency | ⬜ UI | Pending-state guidance in TEAMMATE_BRIEF Tasks 5–6 |
-| I-22 client bundling unverified | 🟨 partly | Brief's `lib/api.ts` typechecks in `apps/web`; production build passes. A real browser import is pending the first UI page |
-| I-23 `REFUSAL_TAU` uncalibrated | ⬜ Module 15 | |
-| I-24 weak-topic rule | ✅ decided | Q7, encoded in mocks + a test |
-| I-25 model choice for video/verify | ⬜ open | Re-evaluate after the video smoke check and the quiz verify pass rate |
-| I-26 dataset missing | ⬜ open | Blocks real tests of Modules 5–7 |
-| I-27 deadline unconfirmed | ⬜ open | |
-
-### 11.2 New findings during Module 4 (all found by tests or the build, all fixed)
-
-| # | Finding | How it was caught | Fix |
-|---|---|---|---|
-| N-1 | A damaged PDF crashed with `TypeError` (would have been a 500): pdf-lib parses leniently and fails later in `getPageCount()` | core test "rejects a damaged PDF" | Page counting moved inside the validation `try` → clear 400 |
-| N-2 | `Range: bytes=<size>-` returned the whole file instead of 416 (checks in the wrong order) | core test `parseByteRange` | Check `start ≥ size` before treating the range as invalid |
-| N-3 | Turbopack logged "unexpected export *" **on every request** (`export * from "@prisma/client"`, an external CommonJS module) | dev-server log review | `@sc/db` re-exports `Prisma` explicitly plus `export type *`; 0 new warnings over a full e2e run |
-| N-4 | `next build` warned that the dynamic uploads path made output tracing include the whole project | production build | `/*turbopackIgnore: true*/` on the runtime-data paths; build has 0 warnings |
-| N-5 | `docs/TEAMMATE_BRIEF.md` was missing from disk (never committed) while 5 docs referenced it | doc update pass | Recreated as the **v1.1** brief (client package, raw upload, `NEXT_PUBLIC_API_MODE`, `options`) |
-
-### 11.3 Contract v1.1 changes (breaking vs. v1.0; nothing consumed v1.0 yet)
-1. Upload is raw bytes + `?filename=` (was multipart `file`).
-2. `NEXT_PUBLIC_USE_MOCKS` → `NEXT_PUBLIC_API_MODE` (`auto` | `mock` | `live`).
-3. Registry `path` values are patterns without query strings. New fields: `query`, `status`. New entries: `health`, `deleteSource`; plus `NON_JSON_ROUTES`.
-4. `AttemptResult.options` added.
-5. Mock values changed: mastery timeline, chat `masteryUpdates`, report per-topic before/after.
-
-### 11.4 Updated "can the frontend use it now?"
-
-| Endpoint group | Status |
-|---|---|
-| health, learners, sources (upload/list/delete), files | ✅ live; e2e tested on dev and production servers |
-| build/topics, chat/history/eval, quiz/submit/report, mastery | mock via `@sc/client` (`auto`) until Modules 9–14 |
-
-### 11.5 Updates after Module 4.5 + Module 5 (2026-10-14)
-
-| ID | Status | Evidence |
-|---|---|---|
-| I-11 video path unverified | 🟨 partly | Files API upload + 1 generate call verified on the real 45 s sample (4,129 tokens ≈ 91 tokens/s). Segments are coarse (2 for 45 s); timestamp accuracy is checked in Module 7 |
-| I-12 no Gemini limiter | ✅ fixed | `limiter.ts`: RPM/TPM windows, concurrency, daily ledger (Pacific day), embeddings counted per text; 429 RetryInfo honoured; 17 unit tests; real runs stayed within limits |
-| I-13 MP4 duration | ✅ (real file) | Parser agrees with ffprobe on the real video (154.157 s) |
-| I-25 model choice | 🟨 | Flash Lite handled the real PDF well (47/47 facts, image-only pages included); video segmentation granularity still to evaluate |
-| New: N-6 | ✅ by design | Ingestion is explicit (`POST /api/sources/[id]/ingest`): uploads and all default tests spend 0 quota (e2e asserts usage unchanged) |
-| New: N-7 | noted | The Round Robin slide (page 9) contains one wrong FIFO cell; extraction reproduces it faithfully. Don't use it as ground truth (data/demo/README.md) |

@@ -1,76 +1,76 @@
-# API Specification (contract v1.1)
+# API Specification
 
-Updated: **2026-10-14** after Module 5 (PDF ingestion). Contract v1.1 + `ingestSource` + health `usage` (first audit: same day, commit `2d5d93a`).
-Source of truth for shapes: **`packages/schemas/src/*.ts`** (Zod). Typed client: **`@sc/client`**. This document restates them. If the two ever disagree, the code wins and this doc is wrong.
+Audited: **2026-10-14** against the repository at commit `2d5d93a` (plus uncommitted doc edits).
+Source of truth for shapes: **`packages/schemas/src/*.ts`** (Zod). This document restates those schemas field by field. If the two ever disagree, the code wins and this doc is wrong.
 
 **Status legend**
 
 | Label | Meaning |
 |---|---|
-| ✅ LIVE | Route exists, `status: "live"` in the registry, and the e2e suite exercises it against the running server |
-| 📄 PLANNED | `status: "planned"` in `endpoints.ts`; **no route file** (a test enforces this); clients get the mock in `auto` mode |
-| 🔶 PROPOSED | Not in schemas; needs agreement before use |
+| ✅ IMPLEMENTED | Route file exists and was called successfully during this audit |
+| 📄 PLANNED | Defined in `@sc/schemas` (`endpoints.ts`) and docs; **no route file**; returns Next's HTML 404 today |
+| 🔶 PROPOSED | Not in schemas; this doc proposes it, and both devs must agree before use |
+| ❓ UNRESOLVED | A decision is needed (see §5) |
 
-**Example provenance:** `[mock]` = copied from `packages/schemas/src/mocks.ts` (validated by tests) · `[test]` = from the contract/e2e tests · `[route]` = observed from the running route · `[proposed]` = valid against the schema, but no backend produces it yet.
-
----
-
-## 0. Verified state (evidence, 2026-10-14)
-
-| Check | Result |
-|---|---|
-| Unit + contract tests (`npm run test`) | **194 pass** (schemas 106, client 16, core 72) |
-| End-to-end vs running dev server (`npm run test:e2e`) | **39 pass** (no Gemini usage) |
-| End-to-end vs production server (`next build` + `next start`) | 37 pass at Module 4; Module 5 build has 0 warnings |
-| Real-data ingestion (`npm run stage1:pdf`) | 9-page PDF → READY, 47/47 facts; re-run 0 Gemini requests |
-| Registry ↔ route files (test) | Every `live` endpoint is exported by its route file; no `planned` endpoint exists; no unregistered route |
-| Planned endpoints over HTTP | Return Next's **HTML 404**. `@sc/client` maps this to `ApiError("http_error", 404)`, and in `auto` mode never calls them |
-| Wrong method on a live route | **405**, empty body (e.g. `DELETE /api/learners`) |
+**Example provenance labels:** `[mock]` = copied from `packages/schemas/src/mocks.ts` (validated by `npm run test`) · `[test]` = taken from `packages/schemas/test/contract.test.ts` · `[route]` = observed from the running route · `[proposed]` = written for this spec and valid against the Zod schema, but no backend produces it yet.
 
 ---
 
-## 1. Conventions (all JSON endpoints)
+## 0. Verified state (evidence)
+
+Probed on `localhost:3000` during the audit with `curl -X <method> -H "Content-Type: application/json" -d '{}'`:
+
+| Request | HTTP | Content-Type |
+|---|---|---|
+| `GET /api/health` | **200** | application/json |
+| `POST /api/health` | **405** | (empty body) |
+| `GET /api/sources`, `POST /api/sources`, `GET /api/files/x`, `GET/POST /api/learners`, `POST /api/build`, `GET /api/topics`, `POST /api/chat`, `GET /api/chat?learnerId=…`, `POST /api/eval/answer`, `POST /api/quiz`, `GET /api/quiz/x`, `POST /api/quiz/x/submit`, `GET /api/quiz/x/report`, `GET /api/mastery?learnerId=…` | **404** | **text/html** (Next's not-found page) |
+
+Route files on disk: only `apps/web/app/api/health/route.ts`.
+Contract tests: `npm run test` → **53/53 pass** (every mock validates against its response schema).
+No application code imports `@sc/schemas` yet (grep found only `transpilePackages` in `apps/web/next.config.ts`).
+
+---
+
+## 1. Conventions (apply to every JSON endpoint)
 
 | Topic | Rule | Status |
 |---|---|---|
-| Base URL | Same origin as the UI (`http://localhost:3000`); Node scripts pass `baseUrl` to `createApiClient` | ✅ |
-| URLs | Registry `path` values are **route patterns** (`/api/quiz/[id]`). Build concrete URLs with **`paths`** (`paths.quiz(id)`, `paths.mastery(learnerId)`); `@sc/client` does it for you | ✅ tested |
-| Query strings | Typed per endpoint (`query` in the registry): `LearnerQuery {learnerId}`, `UploadQuery {filename}`, `HealthQuery {gemini?: "1"}`; invalid → 400 | ✅ |
-| JSON bodies | `Content-Type: application/json`; validated server-side (`readBody`) **and** client-side before sending | ✅ |
-| Upload body | **Raw file bytes** (`request: "binary"`), not multipart | ✅ |
-| Dates | ISO-8601 UTC strings | ✅ |
-| IDs | Opaque non-empty strings. Sources use UUIDs; other tables use cuids; seed/mocks use readable ids. **Never parse ids** | ✅ |
-| Auth | None. Learner identified by `learnerId`. Seed learner: `demo-learner` | by design |
-| Course | Single course; `courseId` optional, default `demo-course`. If the seed is missing, the API returns **409 `not_ready`** ("Run `npm run db:seed`") | ✅ tested |
-| Success | **HTTP 200** for every JSON success, including POST/DELETE. Responses are validated against the response schema before sending; a violation is a 500 `internal` (backend bug, never silent) | ✅ |
-| Errors | `ApiErrorBody` with fixed statuses (`API_ERROR_STATUS`), see below | ✅ |
+| Base URL | Same origin as the UI: `http://localhost:3000` | ✅ |
+| Request body | `Content-Type: application/json`, except upload (multipart) | 📄 |
+| Dates | ISO-8601 UTC strings (`z.iso.datetime()`), e.g. `"2026-10-14T09:00:00.000Z"` | 📄 schema |
+| IDs | Opaque non-empty strings (`Id = z.string().min(1)`). The DB uses cuids; seed and mocks use readable ids (`demo-learner`, `t-rr`). **Never parse or validate id format in the UI.** | 📄 schema |
+| Probabilities | Numbers in `[0, 1]` | 📄 schema |
+| Auth | **None.** The learner is identified by `learnerId` in the body or query string. Fixed seed learner: `demo-learner` | 📄 by design (CLAUDE.md: "no auth") |
+| Course | Single course. `courseId` is optional everywhere and **defaults to `demo-course`** (seed) | 📄 docs |
+| Success status | ❓ Not specified in schemas. **Proposed: 200 for every successful JSON response, including POST.** The client only relies on `res.ok` | ❓ Q1 |
+| Errors | `ApiErrorBody` (below). No route emits it yet; `/api/health` uses its own shape | 📄 schema |
+| Response validation | Server should validate the outgoing payload with the endpoint's response schema (CLAUDE.md: "API routes must validate with it") | 📄 rule, nothing implemented |
 
 ### 1.1 Error contract: `ApiErrorBody` (`packages/schemas/src/common.ts`)
 
 ```ts
-{ error: { code: ApiErrorCode, message: string } }   // message is written for end users
+{ error: { code: ApiErrorCode, message: string } }
 ```
 
-| `code` | HTTP (`API_ERROR_STATUS`) | Used when |
+| `code` | HTTP (from comments in `common.ts`) | Used when |
 |---|---|---|
-| `bad_request` | 400 | Body/query failed validation; unsupported, mismatched, empty, oversize or over-length upload |
-| `not_found` | 404 | Unknown learner / source / quiz; stored file missing |
-| `not_ready` | 409 | Seed missing; deleting a PROCESSING source; (later) course not built, report before submit |
-| `rate_limited` | 429 | Gemini quota hit |
-| `llm_error` | 502 | Gemini failed after retry |
-| `internal` | 500 | Anything else, including a response that broke the contract |
+| `bad_request` | 400 | Request failed Zod validation (body or query) |
+| `not_found` | 404 | Unknown learner / quiz / source id |
+| `not_ready` | 409 | Sources still processing, course not built, report requested before submit |
+| `rate_limited` | 429 | Gemini quota hit (`LlmError.kind === "rate_limit"`) |
+| `llm_error` | 502 | Gemini failed after one retry |
+| `internal` | 500 | Anything else |
 
-`[mock]` `mockStates.error`: `{ "error": { "code": "not_ready", "message": "Sources are still processing. Try again when all are READY." } }`
+Example `[mock]` (`mockStates.error`):
+```json
+{ "error": { "code": "not_ready", "message": "Sources are still processing. Try again when all are READY." } }
+```
 
-**Client-side codes** (`@sc/client` `ApiError.code`, never sent by the server):
-
-| Code | Meaning |
-|---|---|
-| `network` | Fetch failed (status 0) |
-| `http_error` | Non-contract error response, e.g. HTML 404 from a route that doesn't exist |
-| `invalid_response` | 2xx body failed the response schema; the message names the field |
-
-The client also uses `bad_request` with **status 0** when it rejects input before sending.
+**Non-JSON failures the client must survive (verified):**
+- An unknown route returns **404 `text/html`**.
+- A wrong method on an existing route returns **405 with an empty body**.
+- Neither is `ApiErrorBody`. See INTEGRATION_AUDIT issue I-01.
 
 ### 1.2 Citation (`packages/schemas/src/citation.ts`), used by many responses
 
@@ -84,7 +84,7 @@ A discriminated union on `sourceType`. **Exactly one locator per type.**
 | `filename` | string (min 1) | ✓ | original upload name |
 | `kind` | `"TEXT" \| "FIGURE" \| "SLIDE" \| "TRANSCRIPT"` | ✓ | |
 | `title` | string \| **null** | ✓ | key **required**; slide title / figure caption, or `null` |
-| `excerpt` | string (min 1) | ✓ | text to show beside the opened source. ≤ 600 chars from Module 10 (Q10) |
+| `excerpt` | string (min 1) | ✓ | text to show beside the opened source. ❓ no max length (Q10) |
 | `page` | int ≥ 1 | PDF only | 1-based page index **in the file** |
 | `slide` | int ≥ 1 | PPTX only | 1-based slide number (presentation order) |
 | `tStart`, `tEnd` | number ≥ 0, `tEnd ≥ tStart` | VIDEO only | seconds (float) |
@@ -117,161 +117,146 @@ Examples `[mock]` (`citations` in `mocks.ts`):
 
 ## 2. Endpoint inventory
 
-| # | Method | Route pattern | URL builder | Status | Module | Request | Response |
-|---|---|---|---|---|---|---|---|
-| E1 | GET | `/api/health` | `paths.health({gemini?})` | ✅ | 0 | query `HealthQuery` | `HealthResponse` (200 or 503) |
-| E2 | GET | `/api/learners` | `paths.learners()` | ✅ | 4 | — | `Learner[]` |
-| E3 | POST | `/api/learners` | `paths.learners()` | ✅ | 4 | `CreateLearnerRequest` | `Learner` |
-| E4 | POST | `/api/sources` | `paths.uploadSource(filename)` | ✅ | 4 | raw bytes + query `UploadQuery` | `UploadResponse` |
-| E5 | GET | `/api/sources` | `paths.sources()` | ✅ | 4 | — | `SourceView[]` |
-| E17 | DELETE | `/api/sources/[id]` | `paths.source(id)` | ✅ | 4 | — | `DeleteSourceResponse` |
-| E6 | GET, HEAD | `/api/files/[id]` | `paths.file(id)` / `citationHref(c)` | ✅ | 4 | `Range` header | file bytes (200 / 206 / 416) |
-| E7 | POST | `/api/build` | `paths.build()` | 📄 | 9 | `BuildRequest` | `BuildResponse` |
-| E8 | GET | `/api/topics` | `paths.topics()` | 📄 | 9 | — | `TopicView[]` |
-| E9 | POST | `/api/chat` | `paths.chat()` | 📄 | 10 (+11) | `ChatRequest` | `TutorAnswer` |
-| E10 | GET | `/api/chat` | `paths.chatHistory(learnerId)` | 📄 | 10 | query `LearnerQuery` | `ChatMessageView[]` |
-| E11 | POST | `/api/eval/answer` | `paths.evalAnswer()` | 📄 | 10 | `EvalAnswerRequest` | `EvalAnswerResponse` |
-| E12 | POST | `/api/quiz` | `paths.quizzes()` | 📄 | 12 | `CreateQuizRequest` | `Quiz` |
-| E13 | GET | `/api/quiz/[id]` | `paths.quiz(id)` | 📄 | 12 | — | `Quiz` |
-| E14 | POST | `/api/quiz/[id]/submit` | `paths.submitQuiz(id)` | 📄 | 13 (+11) | `SubmitRequest` | `QuizReport` |
-| E15 | GET | `/api/quiz/[id]/report` | `paths.report(id)` | 📄 | 13 | — | `QuizReport` |
-| E16 | GET | `/api/mastery` | `paths.mastery(learnerId)` | 📄 | 14 (+11) | query `LearnerQuery` | `MasteryView` |
-| E18 | POST | `/api/sources/[id]/ingest` | `paths.ingestSource(id)` | ✅ | 5 (PDF), 7 (video) | — | `UploadResponse` (`PROCESSING`) |
-| E20 | POST | `/api/search` | `paths.search()` | ✅ | 8 | `SearchRequest` | `SearchResponse` |
-| E19 | GET | `/api/assessments?learnerId=` (quiz history list) | — | 🔶 | — | — | — |
+| # | Method | Path | Status | Backend module | Request schema | Response schema |
+|---|---|---|---|---|---|---|
+| E1 | GET | `/api/health` | ✅ | 0 | query `gemini=1` (optional) | route-local (not in `@sc/schemas`) |
+| E2 | GET | `/api/learners` | 📄 | 4 | none | `Learner[]` |
+| E3 | POST | `/api/learners` | 📄 | 4 | `CreateLearnerRequest` | `Learner` |
+| E4 | POST | `/api/sources` | 📄 | 4 | multipart `file` | `UploadResponse` |
+| E5 | GET | `/api/sources` | 📄 | 4 (status from 5–7) | none | `SourceView[]` |
+| E6 | GET | `/api/files/[id]` | 📄 (comment in `endpoints.ts` only) | 4 | `Range` header | file bytes |
+| E7 | POST | `/api/build` | 📄 | 9 | `BuildRequest` | `BuildResponse` |
+| E8 | GET | `/api/topics` | 📄 | 9 | none | `TopicView[]` |
+| E9 | POST | `/api/chat` | 📄 | 10 (+11 for mastery) | `ChatRequest` | `TutorAnswer` |
+| E10 | GET | `/api/chat?learnerId=` | 📄 | 10 | query `learnerId` | `ChatMessageView[]` |
+| E11 | POST | `/api/eval/answer` | 📄 | 10 | `EvalAnswerRequest` | `EvalAnswerResponse` |
+| E12 | POST | `/api/quiz` | 📄 | 12 | `CreateQuizRequest` | `Quiz` |
+| E13 | GET | `/api/quiz/[id]` | 📄 | 12 | none | `Quiz` |
+| E14 | POST | `/api/quiz/[id]/submit` | 📄 | 13 (+11) | `SubmitRequest` | `QuizReport` |
+| E15 | GET | `/api/quiz/[id]/report` | 📄 | 13 | none | `QuizReport` |
+| E16 | GET | `/api/mastery?learnerId=` | 📄 | 14 (+11) | query `learnerId` | `MasteryView` |
+| E17 | DELETE or POST | `/api/sources/[id]` (delete / retry failed source) | 🔶 | — | — | — |
+| E18 | GET | `/api/assessments?learnerId=` (quiz history list) | 🔶 | — | — | — |
 
-Registry: `packages/schemas/src/endpoints.ts`, with 18 JSON endpoints (E1–E5, E7–E18, E20) plus `NON_JSON_ROUTES.file` (E6).
-
-### E20. `POST /api/search`: ✅ LIVE (Module 8)
-- **Body:** `SearchRequest = { query: string (1–500, trimmed), k?: 1–20 (default 6), courseId? }`.
-- **Response 200:** `SearchResponse = { topScore, candidates, results: [{ score, citation: Citation }] }`. `score` is cosine similarity over all READY sources (PDF and video together). Citations follow §1.2 (PDF `page`, VIDEO `tStart`/`tEnd`, excerpt ≤ 600 chars).
-- **Cost:** 1 embedding request per new query; repeats are cached (verified: +0).
-- **Errors:** 400 invalid body · 409 `not_ready` if nothing is ingested yet.
-- **Real check:** Stage-1 test set hit@6 100%, hit@1 90%, MRR 0.95.
+The registry in `packages/schemas/src/endpoints.ts` contains E2–E5 and E7–E16 (14 entries). **E1 and E6 are not in the registry.** E17/E18 are only proposals from this audit (see INTEGRATION_AUDIT §7). Nothing depends on them yet.
 
 ---
 
 ## 3. Endpoint details
 
-### E1. `GET /api/health`: ✅ LIVE
-- **Code:** `apps/web/app/api/health/route.ts`. **Schema:** `HealthQuery`, `HealthResponse` (`packages/schemas/src/system.ts`).
-- **Query:** `gemini=1` (optional) adds `checkModels()` (Gemini `models.get` per model: metadata only, no tokens).
-- **Responses:** **200** when healthy, **503** when the DB (or a model, with `?gemini=1`) fails. **The body is the same `HealthResponse` either way.** `api.health()` returns it for both statuses.
-- `[route]`:
+### E1. `GET /api/health`: ✅ IMPLEMENTED
+- **Code:** `apps/web/app/api/health/route.ts`
+- **Purpose:** liveness of the DB and env, and optionally Gemini. The UI may show a status dot; Postman uses it for smoke checks.
+- **Query:** `gemini=1` (optional). Also calls `checkModels()` in `packages/core/src/llm.ts` (Gemini `models.get` per model; metadata only, no tokens).
+- **Responses:** **200** when healthy, **503** when the DB (or Gemini, with `?gemini=1`) fails. Shape `[route]`:
 ```json
-{ "ok": true, "db": { "ok": true, "latencyMs": 2 },
+{ "ok": true,
+  "db": { "ok": true, "latencyMs": 2 },
   "env": { "DATABASE_URL": true, "APP_GEMINI_API_KEY": true, "LLM_MODEL_FAST": true, "LLM_MODEL_STRONG": true, "EMBED_MODEL": true, "REFUSAL_TAU": true },
   "gemini": { "LLM_MODEL_FAST": { "ok": true }, "LLM_MODEL_STRONG": { "ok": true }, "EMBED_MODEL": { "ok": true } } }
 ```
-- DB down: `503 {"ok":false,"db":{"ok":false,"error":"Server has closed the connection."},"env":{…}}`.
-- `env` reports presence only, never values.
-- `usage` (always present): today's Gemini usage **as counted by this app's limiter** (Pacific day), e.g.
-  `"usage": { "day": "2026-10-13", "generate": { "requests": 10, "inputTokens": 12220, "requestsPerDay": 450, "requestsPerMinute": 12 }, "embed": { "requests": 14, "inputTokens": 0, "requestsPerDay": 900, "requestsPerMinute": 80 } }`.
-  AI Studio remains the source of truth (calls made outside this app aren't counted).
+- DB down `[route, verified in Module 0]`: `503 {"ok":false,"db":{"ok":false,"error":"Server has closed the connection."},"env":{…}}`
+- `gemini` key only present with `?gemini=1`. On a client-level failure it is `{"error": "..."}`.
+- **Not `ApiErrorBody`. Not in `@sc/schemas`.** The env map reports presence only (booleans), never values.
+- **DB / modules:** raw `SELECT 1` via `@sc/db`, plus `@sc/core.checkModels`.
 
-### E2. `GET /api/learners`: ✅ LIVE
-- **Code:** `apps/web/app/api/learners/route.ts` → `listLearners()` (`packages/core/src/learners.ts`).
-- **Response:** `Learner[]` (`{ id, name, createdAt }`), oldest first.
-- `[route]` after seed: `[{"id":"demo-learner","name":"Demo Learner","createdAt":"2026-10-13T18:49:33.844Z"}]`
+### E2. `GET /api/learners`: 📄 PLANNED (Module 4)
+- **Purpose:** fills the header learner picker.
+- **Response 200:** `Learner[]`, where `Learner = { id: Id, name: string, createdAt: IsoDate }`
+- `[mock]`:
+```json
+[ { "id": "demo-learner", "name": "Demo Learner", "createdAt": "2026-10-14T09:00:00.000Z" },
+  { "id": "learner-asha", "name": "Asha", "createdAt": "2026-10-14T09:05:00.000Z" } ]
+```
+- **DB:** `Learner` (read). Order ❓ (proposed: `createdAt asc`).
 
-### E3. `POST /api/learners`: ✅ LIVE
-- **Body:** `CreateLearnerRequest = { name }`: trimmed, 1–60 chars.
-- **Response:** `Learner`. **Errors:** 400 for blank, too long, missing or non-JSON (e2e tested).
-- `[test]` `{ "name": "  Asha  " }` → `{ "id": "cm…", "name": "Asha", "createdAt": "…" }`
+### E3. `POST /api/learners`: 📄 PLANNED (Module 4)
+- **Body:** `CreateLearnerRequest = { name: string }`. Trimmed, length 1–60.
+- **Response 200 (Q1):** `Learner`.
+- **Errors:** 400 `bad_request` (empty or too long name).
+- `[test]` request `{ "name": "Asha" }` → `[mock]` response `{ "id": "learner-asha", "name": "Asha", "createdAt": "2026-10-14T09:05:00.000Z" }`
+- **DB:** `Learner` (insert). No uniqueness on `name`.
 
-### E4. `POST /api/sources`: ✅ LIVE (upload). Ingestion starts in Module 5
-- **Request:** `POST /api/sources?filename=<url-encoded name>`. **Body = the raw file bytes.** Any `Content-Type` (the client sends `application/octet-stream`).
-- **Client:** `api.uploadSource(file)`. Browser: `fetch(paths.uploadSource(file.name), { method: "POST", body: file })`.
-- **Server pipeline** (`uploadSource()` in `packages/core/src/sources.ts`):
-  1. Require the course (409 if the seed is missing).
-  2. Reduce the filename to its base name.
-  3. **The type comes from the extension:** `.pdf` / `.pptx` / `.mp4` (`ACCEPTED_EXTENSIONS`). The browser MIME type is ignored.
-  4. Reject early if `Content-Length` exceeds **500 MiB** (`MAX_UPLOAD_BYTES`).
-  5. **Stream** to `data/uploads/<uuid>.<ext>.part`, aborting at the cap (verified: a 2 GiB chunked upload was cut off after 503 MiB).
-  6. **Check the content matches the extension** (`inspectMedia()` in `media.ts`):
+### E4. `POST /api/sources`: 📄 PLANNED (Module 4; processing in 5–7)
+- **Content-Type:** `multipart/form-data`, **single field `file`** (per the `endpoints.ts` request description).
+- **Accepted MIME types** (`ACCEPTED_UPLOADS` in `course.ts`):
 
-| Type | Check | Extracted |
-|---|---|---|
-| PDF | `%PDF-` in the first 1 KB; parses with pdf-lib; not encrypted; ≥ 1 page | `pageCount` |
-| PPTX | ZIP signature; `ppt/presentation.xml` present; ≥ 1 `<p:sldId>` | `pageCount` (slides) |
-| VIDEO | `ftyp` box; `moov/mvhd` duration readable (moov before or after mdat, v0/v1, 64-bit boxes); **≤ 20:00** | `durationSec` |
-
-  7. Rename to the final path and insert the `Source` row (`status: PENDING`, canonical `mimeType`, `sizeBytes`). Any failure removes the file, and no row is created.
-- **Response:** `UploadResponse = { id, status: "PENDING" }`. **Uploading never starts ingestion and never calls Gemini** (e2e tested). Start it with E18.
-- **Errors (all 400 `bad_request`, all e2e tested):**
-
-| Case | Example message |
+| `SourceType` | MIME |
 |---|---|
-| Missing `filename` | validation message |
-| Unsupported extension | `Unsupported file "notes.docx". Upload a .pdf, .pptx or .mp4 file.` |
-| Empty body | `The file is empty.` |
-| Wrong content | `This file has a .pdf extension but its content is not a PDF.` |
-| Not a deck | `This archive is not a PowerPoint deck (ppt/presentation.xml is missing).` |
-| Encrypted PDF | `This PDF is encrypted or password-protected. Upload an unprotected copy.` |
-| Long video | `This video is 21:00 long; the limit is 20 minutes.` |
-| Oversize | `File exceeds the 500 MB limit.` / `File exceeds the upload limit (500 MB).` |
+| PDF | `application/pdf` |
+| PPTX | `application/vnd.openxmlformats-officedocument.presentationml.presentation` |
+| VIDEO | `video/mp4` |
 
-- **DB:** `Source` (insert). **Disk:** `data/uploads/` under the repo root (resolved from `turbo.json`, or `REPO_ROOT`).
+- `MAX_VIDEO_MINUTES = 20`. **The file-size limit is ❓ unresolved (Q2)**, and so is how video duration is enforced.
+- **Behaviour (ARCHITECTURE §6.1):**
+  1. Save the file to `data/uploads/<id>.<ext>`.
+  2. Create `Source` with `status=PROCESSING`.
+  3. Start ingestion **without awaiting** it.
+  4. Return immediately.
+- **Response 200 (Q1):** `UploadResponse = { id: Id, status: SourceStatus }`, e.g. `[mock]` `{ "id": "src-video", "status": "PROCESSING" }`
+- **Errors (proposed):** 400 `bad_request` for a missing `file` field, an unsupported type (Q13), or an empty file.
+- **Courseless:** goes to the default course.
+- Example request `[proposed]`:
+```
+POST /api/sources HTTP/1.1
+Content-Type: multipart/form-data; boundary=----X
 
-### E5. `GET /api/sources`: ✅ LIVE
-- **Response:** `SourceView[]`, oldest first: `{ id, type, filename, status, error, progressDone, progressTotal, chunkCount, createdAt }`.
-- Progress units: PDF pages · PPTX slide batches of 5 · VIDEO 0→1. Until Module 5 a new upload shows `PENDING`, `0/0`, `chunkCount: 0`. **The UI polls every 2 s** while any source is PENDING or PROCESSING.
-- `[mock]` READY example: `{ "id": "src-pdf", "type": "PDF", "filename": "Galvin_Ch5_CPU_Scheduling.pdf", "status": "READY", "error": null, "progressDone": 28, "progressTotal": 28, "chunkCount": 61, "createdAt": "2026-10-14T09:00:00.000Z" }`
+------X
+Content-Disposition: form-data; name="file"; filename="Galvin_Ch5_CPU_Scheduling.pdf"
+Content-Type: application/pdf
 
-### E17. `DELETE /api/sources/[id]`: ✅ LIVE
-- Deletes the row (chunks cascade), the stored file, and any Gemini Files API copy (best effort).
-- **Response:** `DeleteSourceResponse = { id }`.
-- **Errors:** 404 `not_found` (unknown or already deleted) · **409 `not_ready` while `PROCESSING`**.
-- ⚠ Deleting a source after the course is built leaves its topics in place, so rebuild (Module 9).
+%PDF-1.7 …binary…
+------X--
+```
+  Browser: `const fd = new FormData(); fd.append("file", file); fetch("/api/sources", { method: "POST", body: fd })`. **Do not set a Content-Type header manually.**
+- **DB:** `Source` (insert/update), `Chunk` (insert by ingestion).
 
-### E18. `POST /api/sources/[id]/ingest`: ✅ LIVE (Module 5)
-- **Purpose:** start (or re-run) ingestion. **This is the only call that spends Gemini quota for a source.**
-- **Body:** none. **Response 200:** `UploadResponse` → `{ "id": "...", "status": "PROCESSING" }`. The job continues after the response (Next `after()`); poll `GET /api/sources` for `progressDone/progressTotal` and the final `READY` / `FAILED` (+ `error`).
-- **Cost:** about 1 Flash Lite request per PDF page, plus 1 embedding request per chunk. Re-runs of an unchanged file are **free** (results cached on disk by file hash + page + prompt version). Measured on the Stage-1 PDF: 9 pages → 9 + 14 requests, re-run 0.
-- **Errors:**
+### E5. `GET /api/sources`: 📄 PLANNED (Module 4)
+- **Purpose:** source list plus ingestion progress. **The UI polls it every 2 s while any source is `PENDING` or `PROCESSING`.**
+- **Response 200:** `SourceView[]`
 
-| Status | Code | Case |
+| Field | Type | Notes |
 |---|---|---|
-| 404 | `not_found` | unknown id |
-| 409 | `not_ready` | already processing |
-| 409 | `not_ready` | PPTX (`PPTX ingestion isn't built yet …`); the file stays `PENDING`. PDF and VIDEO are supported |
-| 409 | `not_ready` | seed missing |
+| `id` | Id | |
+| `type` | `"PDF" \| "PPTX" \| "VIDEO"` | |
+| `filename` | string | |
+| `status` | `"PENDING" \| "PROCESSING" \| "READY" \| "FAILED"` | |
+| `error` | string \| null | set when FAILED |
+| `progressDone`, `progressTotal` | int ≥ 0 | PDF: pages · PPTX: slide batches of 5 · VIDEO: 0→1 (from the `schema.prisma` comment) |
+| `chunkCount` | int ≥ 0 | |
+| `createdAt` | IsoDate | |
 
-  Gemini quota problems don't fail the request: they surface as `FAILED` with a readable `error` (e.g. "Daily generate budget reached …").
-- **Failure semantics:**
-  - A failing page fails the whole run ("Page N: …") and writes no chunks.
-  - Re-running retries; finished pages come from the cache.
-  - A run interrupted by a server restart is marked `FAILED` at the next start.
-- **DB:** `Source` (status/progress/error), `Chunk` (replaced atomically on success).
+`[mock]` (`mocks.listSources[0]`, plus the failed state from `mockStates.failedSource`):
+```json
+[ { "id": "src-pdf", "type": "PDF", "filename": "Galvin_Ch5_CPU_Scheduling.pdf", "status": "READY", "error": null,
+    "progressDone": 28, "progressTotal": 28, "chunkCount": 61, "createdAt": "2026-10-14T09:00:00.000Z" },
+  { "id": "src-bad", "type": "PPTX", "filename": "broken.pptx", "status": "FAILED", "error": "Could not read ppt/presentation.xml",
+    "progressDone": 0, "progressTotal": 0, "chunkCount": 0, "createdAt": "2026-10-14T09:03:00.000Z" } ]
+```
+- `SourceView` deliberately omits `mimeType`, `sizeBytes`, `pageCount` and `durationSec`, which exist in the DB.
+- **DB:** `Source` plus a count of `Chunk`.
 
-### E6. `GET` / `HEAD` `/api/files/[id]`: ✅ LIVE (non-JSON)
-- **Code:** `apps/web/app/api/files/[id]/route.ts`; `getSourceFile()` + `parseByteRange()` in `sources.ts`.
-- **Response headers:**
-  - `Content-Type` = stored canonical MIME.
-  - `Accept-Ranges: bytes`.
-  - `Content-Length`.
-  - `Content-Disposition: inline; filename="<ascii>"; filename*=UTF-8''<exact name>`.
-  - `Cache-Control: private, max-age=3600, no-transform`.
-  - `X-Content-Type-Options: nosniff`.
-- **Range** (single range, RFC 9110):
-
-| Request | Response |
-|---|---|
-| no `Range` | 200, full file |
-| `bytes=0-99`, `bytes=900-`, `bytes=-50` | 206 with `Content-Range: bytes s-e/size` |
-| start ≥ size, or `bytes=-0` | 416 with `Content-Range: bytes */size` |
-| multi-range, malformed or non-byte units | ignored → 200 full |
-
-- **Browsers:** a PDF iframe uses `citationHref(c)` = `/api/files/{id}#page=N` (the fragment is handled by the browser's viewer, which is unverified). `<video>` sends `bytes=0-`, then seeks with ranges (server behaviour verified with a synthetic MP4).
-- **Production:** with `Accept-Encoding: gzip, br`, responses are **never compressed** (verified on `next start`), so byte offsets stay valid.
-- **Errors:** unknown id, or row present but file missing → 404 `ApiErrorBody`.
+### E6. `GET /api/files/[id]`: 📄 PLANNED (Module 4); documented only as a comment in `endpoints.ts`
+- **Purpose:** serves the original upload for citations: the PDF in an iframe at `#page=N`, the video in `<video>` at `#t=S`, and the PPTX as a download.
+- **Path param:** `id` = `Source.id`.
+- **Request headers:** `Range: bytes=start-end` (sent by browsers for video seeking).
+- **Responses (proposed, standard HTTP):**
+  - `200` with the full file.
+  - `206 Partial Content` with `Content-Range` when `Range` is sent.
+  - `416` for an invalid range.
+  - `404` with `ApiErrorBody` for an unknown id.
+  - Always set `Content-Type` to `Source.mimeType`, `Accept-Ranges: bytes`, and `Content-Disposition: inline` (PDF/video).
+- **Not JSON.** Not validated by `@sc/schemas`.
+- **Risks:**
+  - `Source.path` is relative to the **repo root**, but `next dev` runs with cwd `apps/web` (INTEGRATION_AUDIT I-09).
+  - That `#page=N` works depends on the browser's PDF viewer (unverified).
 
 ### E7. `POST /api/build`: 📄 PLANNED (Module 9)
 - **Body:** `BuildRequest = { courseId?: Id }`, so `{}` is valid.
 - **Behaviour:** one LLM call produces 5–8 topics with prerequisites, then each chunk is tagged to its nearest topic by embedding.
 - **Response 200:** `BuildResponse = { topics: TopicView[] }`. For `TopicView`, see E8.
 - **Errors (proposed):** 409 `not_ready` (any source not READY, or no sources) · 429 / 502 LLM errors.
-- ⚠ **Rebuilding deletes all `Topic` rows, which cascades to `Mastery`, `MasteryEvent` and `Question` for those topics** (`schema.prisma` delete rules). Decision Q9: 409 unless forced; the UI warns.
+- ⚠ **Rebuilding deletes all `Topic` rows, which cascades to `Mastery`, `MasteryEvent` and `Question` for those topics** (`schema.prisma` delete rules). ❓ Q9: warn in the UI or forbid a rebuild once learners have data.
 - **DB:** `Topic` (delete + insert), `Chunk.topicId` (update).
 
 ### E8. `GET /api/topics`: 📄 PLANNED (Module 9)
@@ -302,7 +287,7 @@ Registry: `packages/schemas/src/endpoints.ts`, with 18 JSON endpoints (E1–E5, 
   4. Server-side guards: drop citations outside the retrieved set; turn uncited material into outside knowledge; refuse if `topScore < REFUSAL_TAU` or `NOT_COVERED`.
   5. Apply a damped (30%) BKT update.
   6. Store both messages.
-- Decision Q6: single-turn (no conversation history sent to the model); confirmed in Module 10.
+- ❓ Q6: single-turn (no conversation history sent to the model) vs. multi-turn.
 - **Response 200:** `TutorAnswer`
 
 | Field | Type | Rule (enforced by schema, tested) |
@@ -328,7 +313,7 @@ Registry: `packages/schemas/src/endpoints.ts`, with 18 JSON endpoints (E1–E5, 
     { "origin": "material", "text": "In Round Robin, each process runs for at most one time quantum q before it is preempted and moved to the back of the ready queue.", "citations": [ { "...": "rrSlide citation (§1.2)" } ] },
     { "origin": "material", "text": "If q is very large, RR behaves like FCFS; if it is very small, context-switch overhead dominates.", "citations": [ { "...": "rrVideo citation (§1.2)" } ] },
     { "origin": "outside", "text": "In practice, Linux's CFS scheduler doesn't use a fixed quantum at all; it derives time slices from a target latency.", "citations": [] } ],
-  "masteryUpdates": [ { "topicId": "t-rr", "topicName": "Round Robin", "before": 0.67, "after": 0.74, "source": "CHAT" } ] }
+  "masteryUpdates": [ { "topicId": "t-rr", "topicName": "Round Robin", "before": 0.42, "after": 0.47, "source": "CHAT" } ] }
 ```
 Refusal `[mock]` (`mockStates.refusedAnswer`):
 ```json
@@ -340,8 +325,8 @@ Refusal `[mock]` (`mockStates.refusedAnswer`):
 - **Latency:** each Gemini call took **8–9 s** in the Module 1 smoke run (`gemini-3.1-flash-lite`). Expect about 10 s or more per chat turn, so the UI needs a pending state.
 - **DB:** `Chunk` (read), `Mastery` (read/upsert), `MasteryEvent` (insert, `chatMessageId`), `ChatMessage` (insert ×2).
 
-### E10. `GET /api/chat?learnerId={id}`: 📄 PLANNED (Module 10). Build with `paths.chatHistory(id)`
-- **Query:** `LearnerQuery { learnerId }` (registry `query`). Unknown learner → 404.
+### E10. `GET /api/chat?learnerId={id}`: 📄 PLANNED (Module 10)
+- **Query:** `learnerId` (required). Query parameters are **not** schema-typed in `endpoints.ts` (the path string is `"/api/chat?learnerId="`).
 - **Response 200:** `ChatMessageView[]`, oldest first:
   `{ id, role: "USER"|"ASSISTANT", content: string, blocks: TutorBlock[] | null, coverage: Coverage | null, refused: boolean, createdAt }`
 - `blocks` and `coverage` are `null` for USER messages.
@@ -377,7 +362,7 @@ Refusal `[mock]` (`mockStates.refusedAnswer`):
 | `courseId` | Id | optional |
 | `kind` | `"DIAGNOSTIC" \| "QUIZ" \| "MOCK"` | |
 | `topicIds` | Id[] (min 1) | **required when `kind = "QUIZ"`** (schema refine) |
-| `count` | int 1–20 | optional. Ignored for DIAGNOSTIC (1 per topic) and MOCK (10) (Q12) |
+| `count` | int 1–20 | optional. ❓ Q12: ignored for DIAGNOSTIC (1 per topic) and MOCK (10)? |
 
 `[test]` requests:
 - `{ "learnerId": "demo-learner", "kind": "DIAGNOSTIC" }`
@@ -417,7 +402,7 @@ Refusal `[mock]` (`mockStates.refusedAnswer`):
 ### E13. `GET /api/quiz/[id]`: 📄 PLANNED (Module 12)
 - **Path:** `id` = `assessmentId`.
 - **Response 200:** `Quiz` (same as E12). Used to reload `/quiz/[id]` after navigation. Questions are only those with `verified = true`, ordered by `position` (proposed).
-- **Errors:** 404. Allowed after submission (Q14).
+- **Errors:** 404. ❓ Q14: allowed after submission?
 
 ### E14. `POST /api/quiz/[id]/submit`: 📄 PLANNED (Module 13; BKT needs Module 11)
 - **Body:** `SubmitRequest = { responses: { questionId: Id, response: QuizResponse }[] }`. **Duplicate `questionId`s are rejected.** Unanswered questions may be omitted and are graded as wrong.
@@ -448,26 +433,25 @@ Refusal `[mock]` (`mockStates.refusedAnswer`):
 `AttemptResult`:
 ```ts
 { questionId, position, topicId, type, stem,
-  options: string[] | null,        // MCQ option texts (v1.1); null for NUMERIC/SHORT
-  response: QuizResponse | null,   // null = unanswered; type must match the question type
+  response: QuizResponse | null,   // null = unanswered
   correct, score,                  // score in [0,1], partial credit for SHORT
   correctAnswer: string,           // display string
   feedback: { text, citations: Citation[] },
   misconception: string | null }
 ```
-Show the learner's MCQ answer as `options[response.index]` (`options` added in v1.1, resolving INTEGRATION_AUDIT I-06).
+⚠ `AttemptResult` has **no `options`** and no display text for the learner's own MCQ answer (INTEGRATION_AUDIT I-06).
 
 `[mock]` (`mocks.submitQuiz`, one attempt shown):
 ```json
 { "assessmentId": "asmt-1", "kind": "QUIZ", "submittedAt": "2026-10-14T09:30:00.000Z",
   "score": { "correct": 2, "total": 3 },
-  "perTopic": [ { "topicId": "t-fcfs", "topicName": "FCFS scheduling", "correct": 1, "total": 1, "masteryBefore": 0.67, "masteryAfter": 0.9 },
-                { "topicId": "t-rr", "topicName": "Round Robin", "correct": 1, "total": 2, "masteryBefore": 0.74, "masteryAfter": 0.85 } ],
+  "perTopic": [ { "topicId": "t-fcfs", "topicName": "FCFS scheduling", "correct": 1, "total": 1, "masteryBefore": 0.35, "masteryAfter": 0.52 },
+                { "topicId": "t-rr", "topicName": "Round Robin", "correct": 1, "total": 2, "masteryBefore": 0.47, "masteryAfter": 0.44 } ],
   "misconceptions": [ { "label": "Confuses waiting time with turnaround time", "topicId": "t-rr", "topicName": "Round Robin", "count": 1 } ],
   "revisit": [ "…rrSlide…", "…rrVideo…" ],
   "attempts": [ { "questionId": "q-2", "position": 1, "topicId": "t-rr", "type": "NUMERIC",
       "stem": "Same processes under Round Robin with q = 4 ms. What is P1's turnaround time (ms)?",
-      "options": null, "response": { "type": "NUMERIC", "value": 6 }, "correct": false, "score": 0, "correctAnswer": "30 ms",
+      "response": { "type": "NUMERIC", "value": 6 }, "correct": false, "score": 0, "correctAnswer": "30 ms",
       "feedback": { "text": "P1 finishes last, at t = 30 ms, so its turnaround time is 30 ms. 6 ms is its waiting time.", "citations": [ "…rrSlide…" ] },
       "misconception": "Confuses waiting time with turnaround time" } ] }
 ```
@@ -478,7 +462,7 @@ Show the learner's MCQ answer as `options[response.index]` (`options` added in v
 - **Response 200:** `QuizReport` (same as E14, read from `Assessment.report`).
 - **Errors:** 404 · 409 `not_ready` if not yet submitted (proposed).
 
-### E16. `GET /api/mastery?learnerId={id}`: 📄 PLANNED (Module 14; values from Module 11). Build with `paths.mastery(id)`
+### E16. `GET /api/mastery?learnerId={id}`: 📄 PLANNED (Module 14; values from Module 11)
 - **Response 200:** `MasteryView`
 
 | Field | Type | Notes |
@@ -486,7 +470,7 @@ Show the learner's MCQ answer as `options[response.index]` (`options` added in v
 | `learnerId` | Id | |
 | `needsDiagnostic` | boolean | true until a DIAGNOSTIC assessment is SUBMITTED (proposed derivation) |
 | `topics` | `TopicMastery[]` by `seq` | `{topicId, name, description, seq, prereqIds, p, n, band}`; **`band` must equal `masteryBand(p)`** (schema refine) |
-| `weakTopics` | `{topicId, name, p, citations: Citation[] (max 3)}[]` | topics with band `weak`, lowest `p` first (Q7) |
+| `weakTopics` | `{topicId, name, p, citations: Citation[] (max 3)}[]` | ❓ Q7: selection rule |
 | `history` | `{topicId, at, before, after, source}[]` oldest first | no `topicName`, so join with `topics` |
 
 Bands (`MASTERY_BANDS`): `p < 0.4` → `weak`, `0.4 ≤ p ≤ 0.7` → `developing`, `p > 0.7` → `strong`. A learner with no `Mastery` row for a topic should get the prior `p = 0.3, n = 0` (proposed; the DB default is 0.3).
@@ -494,13 +478,11 @@ Bands (`MASTERY_BANDS`): `p < 0.4` → `weak`, `0.4 ≤ p ≤ 0.7` → `developi
 `[mock]` (`mocks.mastery`, abbreviated):
 ```json
 { "learnerId": "demo-learner", "needsDiagnostic": false,
-  "topics": [ { "topicId": "t-fcfs", "name": "FCFS scheduling", "description": "…", "seq": 2, "prereqIds": ["t-crit"], "p": 0.9, "n": 2, "band": "strong" },
-              { "topicId": "t-sjf", "name": "SJF & SRTF", "description": "…", "seq": 3, "prereqIds": ["t-fcfs"], "p": 0.2, "n": 1, "band": "weak" } ],
-  "weakTopics": [ { "topicId": "t-sjf", "name": "SJF & SRTF", "p": 0.2, "citations": [ "…sjfText (PDF p. 9)…" ] } ],
-  "history": [ { "topicId": "t-rr", "at": "2026-10-14T09:10:12.000Z", "before": 0.67, "after": 0.74, "source": "CHAT" } ] }
+  "topics": [ { "topicId": "t-proc", "name": "Processes & CPU–I/O bursts", "description": "…", "seq": 0, "prereqIds": [], "p": 0.78, "n": 3, "band": "strong" },
+              { "topicId": "t-sjf", "name": "SJF & SRTF", "description": "…", "seq": 3, "prereqIds": ["t-fcfs"], "p": 0.3, "n": 0, "band": "weak" } ],
+  "weakTopics": [ { "topicId": "t-sjf", "name": "SJF & SRTF", "p": 0.3, "citations": [ "…sjfText (PDF p. 9)…" ] } ],
+  "history": [ { "topicId": "t-rr", "at": "2026-10-14T09:10:12.000Z", "before": 0.42, "after": 0.47, "source": "CHAT" } ] }
 ```
-History has one event per answered question or chat turn; `n` = events per topic; each event's `before` = the previous `after` (prior 0.3). These are tested invariants of the mocks.
-
 Cold start `[mock]` (`mockStates.newLearnerMastery`): `needsDiagnostic: true`, every topic `p: 0.3, n: 0, band: "weak"`, `weakTopics: []`, `history: []`.
 - **DB:** `Topic`, `Mastery`, `MasteryEvent`, `Assessment` (read); `Chunk` for weak-topic citations.
 
@@ -508,31 +490,25 @@ Cold start `[mock]` (`mockStates.newLearnerMastery`): `needsDiagnostic: true`, e
 
 ## 4. What the frontend can call today
 
-| Endpoint | Live? |
+| Endpoint | Callable now? |
 |---|---|
-| health, learners (list/create), sources (upload/list/delete/**ingest**), files | ✅ yes (through `@sc/client` in `auto` mode) |
-| everything else | mock (via `@sc/client`); HTML 404 if called directly |
+| `GET /api/health` | ✅ yes |
+| Everything else | ❌ No. Returns HTML 404. Use `@sc/schemas/mocks` |
 
-## 5. Decisions (adopted 2026-10-14; the teammate may reopen any of them)
+## 5. Open decisions (both developers)
 
-| # | Question | Decision |
+Questions Q3–Q5 and Q11 concern the client, quiz report and ingestion. They're in [INTEGRATION_AUDIT.md §8](INTEGRATION_AUDIT.md) along with this full list.
+
+| # | Question | Proposal |
 |---|---|---|
-| Q1 | Success status | **200** for all JSON successes |
-| Q2 | Upload cap; video limit | **500 MiB**, streamed to disk; **MP4 duration parsed server-side**, > 20:00 rejected |
-| Q3 | Mock switching | **Per endpoint**, from the registry `status` (`NEXT_PUBLIC_API_MODE=auto`) |
-| Q4 | Report MCQ text | **`AttemptResult.options`** added |
-| Q5 | Fix a failed source | **`DELETE /api/sources/[id]`** and **`POST /api/sources/[id]/ingest`** (re-run; cached pages free), both live |
-| Q6 | Tutor turns | Single-turn (decide finally in Module 10) |
-| Q7 | Weak topics | `band === "weak"`, lowest `p` first, ≤ 3 citations |
-| Q8 | MasteryEvent granularity | **One per answered question / chat turn** (mocks updated) |
-| Q9 | Rebuild with learner data | 409 unless forced (Module 9) |
-| Q10 | Excerpt length | ≤ 600 chars, truncated server-side (Module 10) |
-| Q11 | Video chunk content | `transcript + "\n[On screen] " + onScreen` (Module 7) |
-| Q12 | `count` for DIAGNOSTIC/MOCK | Ignored |
-| Q13 | Upload error code | **`bad_request` 400** (implemented) |
-| Q14 | `GET /api/quiz/[id]` after submit | Allowed |
-| Q15 | Unknown `learnerId` | 404 `not_found` (`requireLearner()` implemented) |
-| Q16 | Embedded text | `title + "\n" + content` (Module 8) |
-| Q17 | Restart recovery | **Implemented:** `instrumentation.ts` marks PROCESSING rows with no progress for 2 min as FAILED |
-| Q18 | Unsupported PPTX images | Skip, with a note in the slide content (Module 6) |
-| Q19 | Gemini limiter values | **Implemented:** verified free tier (15/250K/500; 100/30K/1K), enforced below it (12/200K/450; 80/24K/900), env-overridable |
+| Q1 | Success status codes | 200 for all JSON successes |
+| Q2 | Upload size limit; how to enforce the 20-min video limit | Decide a byte cap (e.g. 500 MB). Measure duration server-side (parse the MP4 `mvhd` box) or trust the client (`<video>.duration`) |
+| Q6 | Tutor: single-turn or include recent history? | Single-turn (matches ARCHITECTURE) |
+| Q7 | `weakTopics` rule | `band === "weak"`, sorted by `p`, max 3 citations from the topic's chunks |
+| Q8 | `MasteryEvent` granularity in a quiz | one event per attempt (ARCHITECTURE: "BKT update per answer"); mocks show one per topic |
+| Q9 | Rebuild after learners have data | 409 unless `?force=1`; the UI warns |
+| Q10 | Max `excerpt` length | 600 chars, truncated server-side with "…" |
+| Q12 | `count` for DIAGNOSTIC/MOCK | ignored |
+| Q13 | Error for unsupported type / too large upload | `bad_request` (400); the enum has no 413/415 codes |
+| Q14 | `GET /api/quiz/[id]` after submit | allowed (read-only) |
+| Q15 | Unknown `learnerId` | 404 `not_found` everywhere |
