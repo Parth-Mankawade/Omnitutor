@@ -41,7 +41,7 @@ Production mode: `npm run build && npm run start -w @sc/web`.
 | `APP_GEMINI_API_KEYS` | optional: several keys, comma-separated. When one hits its quota or is rejected (invalid/revoked), calls move to the next, and the built-in rate limits scale with the number of keys |
 | `LLM_MODEL_FAST` / `LLM_MODEL_STRONG` | generation models (bulk extraction + grading / tutor, quiz generation, video, course build) |
 | `LLM_MODEL_VERIFY` | the **different** model that blindly re-answers every generated quiz question (**cross-model validation**); we use `gemini-3.5-flash-lite` against `gemini-3.1-flash-lite` for generation |
-| `LLM_MODEL_FALLBACK` | optional: used when a model is overloaded or out of quota on every key (default: `LLM_MODEL_FAST`), so a demo never fails on a 503/429 |
+| `LLM_MODEL_FALLBACK` | optional: used when a model is overloaded or out of quota on every key (default: whichever of `LLM_MODEL_VERIFY` / `LLM_MODEL_FAST` differs from the failing model) |
 | `EMBED_MODEL` | embedding model (`gemini-embedding-001`, 768 dimensions) |
 | `LLM_TIMEOUT_MS` | optional: per-request timeout for Gemini calls (default 120000); a timed-out call is retried once |
 | `SESSION_SECRET` | optional, ≥32 chars; signs login cookies. If unset, a random secret is generated once into `data/cache/session-secret` |
