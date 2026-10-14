@@ -1,4 +1,5 @@
 "use client";
+import { SendIcon, TrashIcon } from "@/components/icons";
 import React, { useState } from "react";
 
 interface Source {
@@ -42,8 +43,8 @@ export default function SourcesPage() {
 
       {/* Upload Area */}
       <div className="p-12 border-2 border-dashed border-rule rounded-[3rem] bg-surface flex flex-col items-center justify-center text-center space-y-4 group hover:border-proof transition-colors cursor-pointer">
-        <div className="w-16 h-16 bg-paper rounded-full flex items-center justify-center text-2xl shadow-sm group-hover:scale-110 transition-transform">
-          📤
+        <div className="w-16 h-16 bg-paper rounded-full flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform">
+          <SendIcon size={28} />
         </div>
         <div className="space-y-1">
           <p className="text-lg font-display font-bold text-ink">Drop your materials here</p>
@@ -85,8 +86,12 @@ export default function SourcesPage() {
                     {source.status}
                   </span>
                 </div>
-                <button className="p-2 hover:bg-graphite/10 rounded-lg text-graphite hover:text-ink transition-colors">
-                  <span className="text-xs">🗑️</span>
+                <button
+                  type="button"
+                  aria-label={`Delete ${source.name}`}
+                  className="p-2 hover:bg-graphite/10 rounded-lg text-graphite hover:text-ink transition-colors"
+                >
+                  <TrashIcon size={16} />
                 </button>
               </div>
             </div>

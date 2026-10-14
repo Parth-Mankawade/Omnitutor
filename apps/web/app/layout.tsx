@@ -1,34 +1,29 @@
 import type { Metadata } from "next";
-import { Fraunces, Instrument_Sans, JetBrains_Mono } from "next/font/google";
 import Link from "next/link";
 import "./globals.css";
 
 /* Three voices, one job each:
    - Fraunces carries the display voice (folio headlines, section rules, the
-     large numerals on the report). `opsz` lets it hold up at display sizes.
+     large numerals on the report). Its variable `opsz` axis holds up at display
+     sizes.
    - Instrument Sans is the interface and body face.
-   - JetBrains Mono is the locator voice: pages, slides and timestamps only. */
-const fraunces = Fraunces({
-  variable: "--font-fraunces",
-  subsets: ["latin"],
-  axes: ["opsz"],
-  display: "swap",
-});
+   - JetBrains Mono is the locator voice: pages, slides and timestamps only.
 
-const instrumentSans = Instrument_Sans({
-  variable: "--font-instrument",
-  subsets: ["latin"],
-  display: "swap",
-});
+   All three are self-hosted: the WOFF2 files live in `public/fonts` and are
+   wired up by the `@font-face` rules in globals.css, with their OFL licenses in
+   `public/fonts/licenses`. No font CDN is contacted at build time or at
+   runtime, so the family variables those utilities need are declared in CSS
+   rather than injected here. */
 
-const jetbrainsMono = JetBrains_Mono({
-  variable: "--font-jetbrains-mono",
-  subsets: ["latin"],
-  display: "swap",
-});
+/* Preload the two faces above the fold so the display and body type are ready
+   before first paint. `crossOrigin` is required for font preloads. */
+const PRELOADED_FONTS = [
+  "/fonts/fraunces-latin.woff2",
+  "/fonts/instrument-sans-latin.woff2",
+] as const;
 
 export const metadata: Metadata = {
-  title: "Omnitutor — tutoring grounded in your own course material",
+  title: "Omnitutor: tutoring grounded in your own course material",
   description:
     "Upload a lecture video, a textbook chapter and a slide deck. Ask questions and get answers that cite the exact page, slide or timestamp, with verified adaptive quizzes and a per-topic mastery model.",
 };
@@ -46,9 +41,20 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${fraunces.variable} ${instrumentSans.variable} ${jetbrainsMono.variable} h-full`}
+      className="h-full"
     >
       <body className="flex min-h-full flex-col bg-paper text-ink">
+        {PRELOADED_FONTS.map((href) => (
+          <link
+            key={href}
+            rel="preload"
+            as="font"
+            type="font/woff2"
+            href={href}
+            crossOrigin="anonymous"
+          />
+        ))}
+
         {/* Keyboard users reach the content without tabbing the whole header
             (WCAG 2.4.1). Hidden until focused. */}
         <a

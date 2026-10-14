@@ -1,4 +1,5 @@
 "use client";
+import { BookOpenIcon } from "@/components/icons";
 import React, { useState } from "react";
 
 interface Citation {
@@ -171,7 +172,7 @@ export default function TutorPage() {
           ) : (
             <div className="h-full flex flex-col items-center justify-center text-center space-y-4 p-12">
               <div className="w-16 h-16 bg-graphite/10 rounded-full flex items-center justify-center text-graphite">
-                <span className="text-2xl">📖</span>
+                <BookOpenIcon size={28} />
               </div>
               <div>
                 <p className="text-sm font-medium text-ink">No active citation</p>

@@ -5,7 +5,7 @@
 // contract breaks the build rather than drifting silently.
 //
 // `parse` (not `satisfies`) is deliberate: the contract encodes two invariants
-// that TypeScript cannot express — a citation's locator must match its source
+// that TypeScript cannot express: a citation's locator must match its source
 // type, and a material block must cite at least one chunk. Parsing surfaces a
 // violation at runtime the moment this module is imported.
 
@@ -48,7 +48,7 @@ export const sources: Source[] = SourceSchema.array().parse([
   {
     id: "src-ttp-ch7",
     type: "PDF",
-    name: "Operating Systems: Three Easy Pieces — Ch. 7, Scheduling",
+    name: "Operating Systems: Three Easy Pieces, Ch. 7, Scheduling",
     status: "READY",
     error: null,
     chunkCount: 142,
@@ -58,7 +58,7 @@ export const sources: Source[] = SourceSchema.array().parse([
   {
     id: "src-nptel-lec04",
     type: "VIDEO",
-    name: "NPTEL Lecture 04 — CPU Scheduling Algorithms (18 min)",
+    name: "NPTEL Lecture 04: CPU Scheduling Algorithms (18 min)",
     status: "READY",
     error: null,
     chunkCount: 96,
@@ -68,10 +68,13 @@ export const sources: Source[] = SourceSchema.array().parse([
   {
     id: "src-deck06",
     type: "PPTX",
-    name: "CS301 Deck 06 — Scheduling Queues and Priorities",
+    name: "CS301 Deck 06: Scheduling Queues and Priorities",
     status: "PROCESSING",
     error: null,
-    chunkCount: 0,
+    // Part-way through ingestion. Non-zero on purpose: this deck's slides are
+    // already cited elsewhere in the fixtures, and a source that reports zero
+    // chunks while being cited would be a contradiction on screen.
+    chunkCount: 12,
     sizeBytes: 3984588,
     addedAt: "2026-10-13T18:02:00.000Z",
   },
@@ -121,7 +124,7 @@ export const citations: Citation[] = CitationSchema.array().parse([
     sourceType: "PPTX",
     slide: 9,
     excerpt:
-      "Scheduling criteria: CPU utilisation, throughput, turnaround time, waiting time and response time — each measured over the same set of processes.",
+      "Scheduling criteria: CPU utilisation, throughput, turnaround time, waiting time and response time, each measured over the same set of processes.",
   },
 ]);
 
@@ -373,7 +376,7 @@ export const diagnosticReport: QuizReport = QuizReportSchema.parse({
       response: "10.5",
       correct: false,
       feedback: {
-        text: "Not quite. Waiting time is time spent in the ready queue, so it is the sum of the bursts that ran earlier — not the sum of all burst times divided by the process count.",
+        text: "Not quite. Waiting time is time spent in the ready queue, so it is the sum of the bursts that ran earlier, not the sum of all burst times divided by the process count.",
         citations: [citationByChunkId.get("chunk-ttp-071-07")!],
       },
       misconception:
