@@ -6,6 +6,10 @@ const qs = (query: Record<string, string>) => new URLSearchParams(query).toStrin
 export const paths = {
   health: (opts: { gemini?: boolean } = {}) => (opts.gemini ? `/api/health?${qs({ gemini: "1" })}` : "/api/health"),
   learners: () => "/api/learners",
+  signup: () => "/api/auth/signup",
+  login: () => "/api/auth/login",
+  logout: () => "/api/auth/logout",
+  session: () => "/api/auth/session",
   sources: () => "/api/sources",
   uploadSource: (filename: string) => `/api/sources?${qs({ filename })}`,
   source: (id: string) => `/api/sources/${seg(id)}`,

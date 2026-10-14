@@ -17,3 +17,4 @@ export * from "./tutor";
 export * from "./quiz";
 export * from "./grading";
 export * from "./mastery";
+export * from "./auth";

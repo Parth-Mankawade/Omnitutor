@@ -4,8 +4,9 @@ import { notFound } from "./errors";
 
 const toLearner = (l: LearnerRow): Learner => ({ id: l.id, name: l.name, createdAt: l.createdAt.toISOString() });
 
+/** Open profiles only (no password); private accounts are never listed. */
 export async function listLearners(): Promise<Learner[]> {
-  return (await prisma.learner.findMany({ orderBy: [{ createdAt: "asc" }, { id: "asc" }] })).map(toLearner);
+  return (await prisma.learner.findMany({ where: { passwordHash: null }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] })).map(toLearner);
 }
 
 export async function createLearner(input: CreateLearnerRequest): Promise<Learner> {

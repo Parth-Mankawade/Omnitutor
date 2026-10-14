@@ -241,9 +241,11 @@ model Attempt {
 // ───────────────────── Learner model ─────────────────────
 
 model Learner {
-  id        String   @id @default(cuid())
-  name      String
-  createdAt DateTime @default(now())
+  id           String   @id @default(cuid())
+  name         String
+  // scrypt hash; set = a private account (sign-in required for its data), null = open profile (tools/tests)
+  passwordHash String?
+  createdAt    DateTime @default(now())
 
   mastery       Mastery[]
   masteryEvents MasteryEvent[]

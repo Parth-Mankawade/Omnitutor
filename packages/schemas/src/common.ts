@@ -39,6 +39,7 @@ export const ApiErrorCode = z.enum([
   "bad_request", // 400: request failed schema validation
   "not_found", // 404
   "not_ready", // 409: e.g. sources still processing, course not built
+  "unauthorized", // 401: not signed in as the account that owns this data, or wrong name/password
   "rate_limited", // 429: Gemini quota hit
   "llm_error", // 502: Gemini failed after retry
   "internal", // 500
@@ -50,6 +51,7 @@ export const API_ERROR_STATUS: Record<ApiErrorCode, number> = {
   bad_request: 400,
   not_found: 404,
   not_ready: 409,
+  unauthorized: 401,
   rate_limited: 429,
   llm_error: 502,
   internal: 500,

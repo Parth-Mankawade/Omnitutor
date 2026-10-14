@@ -146,7 +146,7 @@ export default function TutorPage() {
               </div>
             ),
           )}
-          {sending && <p className="text-sm text-graphite">Searching your material…</p>}
+          {sending && <p className="animate-pulse text-sm text-graphite" role="status">Searching your material and writing a cited answer…</p>}
           {error && <p role="alert" className="text-sm text-proof">{error}</p>}
           <div ref={bottom} />
         </div>

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { LearnerPicker, LearnerProvider } from "@/components/learner";
+import { Suspense } from "react";
+import { AccountControl, LearnerGate, LearnerProvider } from "@/components/learner";
 import "./globals.css";
 
 /* Three voices, one job each:
@@ -98,13 +99,17 @@ export default function RootLayout({
                   </li>
                 ))}
               </ul>
-              <LearnerPicker />
+              <Suspense fallback={<span className="h-8 w-20" aria-hidden="true" />}>
+                <AccountControl />
+              </Suspense>
             </nav>
           </div>
         </header>
 
         <div id="content" className="relative z-10 flex flex-1 flex-col">
-          {children}
+          <Suspense fallback={<main className="mx-auto w-full max-w-3xl p-8 text-graphite">Loading…</main>}>
+            <LearnerGate>{children}</LearnerGate>
+          </Suspense>
         </div>
         </LearnerProvider>
       </body>

@@ -85,7 +85,7 @@ function QuizFlow() {
             <p className="text-graphite">Questions come from your own material, are checked by a second, independent pass, and never repeat for you.</p>
           </div>
           {phase === "generating" ? (
-            <p className="text-center text-graphite">Generating and verifying questions from your material… (about 10–15 s)</p>
+            <p role="status" className="animate-pulse text-center text-graphite">Generating and verifying questions from your material… (about 10–15 s)</p>
           ) : topics.length === 0 ? (
             <p className="text-center text-graphite">No topics yet: add sources and build the course topics on the Sources page first.</p>
           ) : (

@@ -1,69 +1,48 @@
 "use client";
-// Active learner (no auth, by design): picked in the header, remembered per browser.
+// The signed-in learner (Module 16). The session is an HttpOnly cookie the server checks on every
+// learner-scoped route; this context only mirrors who that is, for rendering.
 import type { Learner } from "@sc/schemas";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { api, errorText } from "@/lib/api";
 
-const STORAGE_KEY = "omnitutor.learnerId";
-
 type LearnerState = {
-  learners: Learner[];
+  /** The signed-in learner, or null. */
   learner: Learner | null;
-  select: (id: string) => void;
-  create: (name: string) => Promise<void>;
+  /** False until the session check has answered. */
+  ready: boolean;
   error: string | null;
+  signIn: (mode: "login" | "signup", name: string, password: string) => Promise<void>;
+  signOut: () => Promise<void>;
 };
 
 const LearnerContext = createContext<LearnerState | null>(null);
 
-function readStored(): string | null {
-  try {
-    return window.localStorage.getItem(STORAGE_KEY);
-  } catch {
-    return null;
-  }
-}
-function store(id: string) {
-  try {
-    window.localStorage.setItem(STORAGE_KEY, id);
-  } catch {
-    /* private mode: the choice just isn't remembered */
-  }
-}
-
 export function LearnerProvider({ children }: { children: ReactNode }) {
-  const [learners, setLearners] = useState<Learner[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [learner, setLearner] = useState<Learner | null>(null);
+  const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     api
-      .listLearners()
-      .then((list) => {
-        setLearners(list);
-        // ?learner=<id> in the URL (shareable links) wins over the remembered choice.
-        const fromUrl = new URLSearchParams(window.location.search).get("learner");
-        const stored = readStored();
-        const id = [fromUrl, stored].find((x) => x && list.some((l) => l.id === x)) ?? list[0]?.id ?? null;
-        setSelectedId(id);
-        if (id && id === fromUrl) store(id);
-      })
-      .catch((e) => setError(errorText(e)));
+      .session()
+      .then((s) => setLearner(s.learner))
+      .catch((e) => setError(errorText(e)))
+      .finally(() => setReady(true));
   }, []);
 
-  const select = useCallback((id: string) => {
-    setSelectedId(id);
-    store(id);
+  const signIn = useCallback(async (mode: "login" | "signup", name: string, password: string) => {
+    setLearner(await (mode === "login" ? api.login({ name, password }) : api.signup({ name, password })));
+    setError(null);
   }, []);
 
-  const create = useCallback(async (name: string) => {
-    const learner = await api.createLearner({ name });
-    setLearners((list) => [...list, learner]);
-    select(learner.id);
-  }, [select]);
+  const signOut = useCallback(async () => {
+    await api.logout();
+    setLearner(null);
+  }, []);
 
-  const learner = learners.find((l) => l.id === selectedId) ?? null;
-  return <LearnerContext.Provider value={{ learners, learner, select, create, error }}>{children}</LearnerContext.Provider>;
+  return <LearnerContext.Provider value={{ learner, ready, error, signIn, signOut }}>{children}</LearnerContext.Provider>;
 }
 
 export function useLearner(): LearnerState {
@@ -72,57 +51,68 @@ export function useLearner(): LearnerState {
   return ctx;
 }
 
-/** Header control: switch learner or add one. */
-export function LearnerPicker() {
-  const { learners, learner, select, create, error } = useLearner();
-  const [adding, setAdding] = useState(false);
-  const [name, setName] = useState("");
+/** Header control: the signed-in learner with a sign-out button, or a sign-in link. */
+export function AccountControl() {
+  const { learner, ready, error, signOut } = useLearner();
+  const router = useRouter();
+  const pathname = usePathname();
   const [busy, setBusy] = useState(false);
 
   if (error) return <span className="text-meta text-proof" title={error}>API offline</span>;
-  if (adding) {
+  if (!ready) return <span className="h-8 w-20 animate-pulse rounded-card bg-surface" aria-hidden="true" />;
+  if (!learner) {
     return (
-      <form
-        className="flex items-center gap-1.5"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          if (!name.trim()) return;
+      <Link
+        href={pathname === "/login" ? "/login" : `/login?next=${encodeURIComponent(pathname)}`}
+        className="inline-flex h-8 items-center rounded-card bg-ink px-3 text-meta text-paper transition-opacity hover:opacity-85 active:opacity-70"
+      >
+        Sign in
+      </Link>
+    );
+  }
+  return (
+    <span className="flex items-center gap-2 text-meta">
+      <span className="hidden max-w-36 truncate text-ink sm:inline" title={learner.name}>{learner.name}</span>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={async () => {
           setBusy(true);
           try {
-            await create(name.trim());
-            setAdding(false);
-            setName("");
+            await signOut();
+            router.push("/");
           } finally {
             setBusy(false);
           }
         }}
+        className="h-8 rounded-card border border-rule-strong px-2.5 text-graphite transition-colors hover:bg-surface hover:text-ink active:bg-rule disabled:opacity-50"
       >
-        <input
-          autoFocus
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Learner name"
-          aria-label="New learner name"
-          className="h-8 w-36 rounded-card border border-rule-strong bg-surface px-2 text-meta text-ink focus:outline-none focus:ring-2 focus:ring-proof/40"
-        />
-        <button disabled={busy} className="h-8 rounded-card bg-ink px-2.5 text-meta text-paper disabled:opacity-50">Add</button>
-        <button type="button" onClick={() => setAdding(false)} className="h-8 px-1.5 text-meta text-graphite hover:text-ink">Cancel</button>
-      </form>
-    );
-  }
+        {busy ? "Signing out…" : "Sign out"}
+      </button>
+    </span>
+  );
+}
+
+/** Pages with personal data (tutor, quiz, report, dashboard). Others render as they are. */
+const PRIVATE = ["/tutor", "/quiz", "/dashboard"];
+
+/** Shows a sign-in prompt instead of a private page when nobody is signed in. */
+export function LearnerGate({ children }: { children: ReactNode }) {
+  const { learner, ready } = useLearner();
+  const pathname = usePathname();
+  const isPrivate = PRIVATE.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+  if (!isPrivate || learner) return children;
+  if (!ready) return <main className="mx-auto w-full max-w-3xl p-8 text-graphite">Checking your session…</main>;
   return (
-    <label className="flex items-center gap-1.5 text-meta text-graphite">
-      <span className="hidden sm:inline">Learner</span>
-      <select
-        value={learner?.id ?? ""}
-        onChange={(e) => (e.target.value === "__new__" ? setAdding(true) : select(e.target.value))}
-        className="h-8 max-w-[11rem] rounded-card border border-rule-strong bg-surface px-2 text-meta text-ink focus:outline-none focus:ring-2 focus:ring-proof/40"
+    <main className="mx-auto w-full max-w-md px-4 py-20 text-center">
+      <h1 className="font-display text-title text-ink">Sign in to continue</h1>
+      <p className="mt-3 text-body text-graphite">Your tutor conversations, quizzes and mastery map are private to your account.</p>
+      <Link
+        href={`/login?next=${encodeURIComponent(pathname)}`}
+        className="mt-8 inline-flex h-11 items-center rounded-card bg-ink px-6 text-body text-paper transition-opacity hover:opacity-85 active:opacity-70"
       >
-        {learners.map((l) => (
-          <option key={l.id} value={l.id}>{l.name}</option>
-        ))}
-        <option value="__new__">+ New learner…</option>
-      </select>
-    </label>
+        Sign in or create an account
+      </Link>
+    </main>
   );
 }

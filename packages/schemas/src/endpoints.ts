@@ -3,6 +3,7 @@ import {
   BuildRequest, BuildResponse, CourseQuery, CreateLearnerRequest, DeleteSourceResponse, Learner, LearnerQuery,
   SourceView, TopicView, UploadQuery, UploadResponse,
 } from "./course";
+import { Credentials, SessionView } from "./auth";
 import { EvalAnswerRequest, EvalAnswerResponse } from "./eval";
 import { MasteryView } from "./mastery";
 import { CreateQuizRequest, Quiz, QuizReport, SubmitRequest } from "./quiz";
@@ -33,6 +34,10 @@ export const endpoints = {
   health: { method: "GET", path: "/api/health", query: HealthQuery, request: null, response: HealthResponse, status: "live", module: 0 },
   listLearners: { method: "GET", path: "/api/learners", query: null, request: null, response: z.array(Learner), status: "live", module: 4 },
   createLearner: { method: "POST", path: "/api/learners", query: null, request: CreateLearnerRequest, response: Learner, status: "live", module: 4 },
+  signup: { method: "POST", path: "/api/auth/signup", query: null, request: Credentials, response: Learner, status: "live", module: 16 },
+  login: { method: "POST", path: "/api/auth/login", query: null, request: Credentials, response: Learner, status: "live", module: 16 },
+  logout: { method: "POST", path: "/api/auth/logout", query: null, request: null, response: SessionView, status: "live", module: 16 },
+  session: { method: "GET", path: "/api/auth/session", query: null, request: null, response: SessionView, status: "live", module: 16 },
   listSources: { method: "GET", path: "/api/sources", query: null, request: null, response: z.array(SourceView), status: "live", module: 4 },
   uploadSource: { method: "POST", path: "/api/sources", query: UploadQuery, request: "binary", response: UploadResponse, status: "live", module: 4 },
   deleteSource: { method: "DELETE", path: "/api/sources/[id]", query: null, request: null, response: DeleteSourceResponse, status: "live", module: 4 },

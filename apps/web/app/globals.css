@@ -208,6 +208,38 @@
     -webkit-text-size-adjust: 100%;
   }
 
+  /* Tailwind 4 resets buttons to the default cursor; controls must look and feel clickable. */
+  button:not(:disabled),
+  [role="button"],
+  select,
+  summary,
+  label:has(> input[type="checkbox"], > input[type="radio"]) {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: not-allowed;
+  }
+  /* Immediate press feedback, even before a slow request answers. */
+  button:not(:disabled):active,
+  a[href]:active {
+    transform: translateY(1px) scale(0.985);
+  }
+  button,
+  a[href] {
+    transition-property: color, background-color, border-color, opacity, box-shadow, transform;
+    transition-duration: 150ms;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-proof);
+    outline-offset: 2px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    button:not(:disabled):active,
+    a[href]:active {
+      transform: none;
+    }
+  }
+
   body {
     background-color: var(--color-paper);
     color: var(--color-ink);

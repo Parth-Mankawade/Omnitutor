@@ -2,7 +2,7 @@
 // Routes stay thin: parse input → call @sc/core → json(ResponseSchema, result).
 import { connection, type NextRequest } from "next/server";
 import { z } from "zod";
-import { AppError, LlmError } from "@sc/core";
+import { AppError, LlmError, SESSION_COOKIE, SESSION_TTL_S, readSession, sessionSecret } from "@sc/core";
 import { Prisma } from "@sc/db";
 import { API_ERROR_STATUS, type ApiErrorBody, type ApiErrorCode } from "@sc/schemas";
 
@@ -45,6 +45,19 @@ export function json<S extends z.ZodType>(schema: S, data: z.input<S>, status = 
     return errorResponse("internal", `Response broke the API contract:\n${z.prettifyError(r.error)}`);
   }
   return Response.json(r.data, { status });
+}
+
+/** The learner id of the request's valid session cookie, or null. */
+export function sessionOf(req: NextRequest): string | null {
+  return readSession(req.cookies.get(SESSION_COOKIE)?.value, sessionSecret());
+}
+
+/** Sets (token) or clears (null) the session cookie on a response. HttpOnly; Secure when served over HTTPS. */
+export function withSession(res: Response, req: NextRequest, token: string | null): Response {
+  const secure = req.nextUrl.protocol === "https:" ? "; Secure" : "";
+  const value = token ? `${token}; Max-Age=${SESSION_TTL_S}` : "; Max-Age=0";
+  res.headers.append("Set-Cookie", `${SESSION_COOKIE}=${value}; Path=/; HttpOnly; SameSite=Lax${secure}`);
+  return res;
 }
 
 /** Parses a JSON body with `schema`; 400 bad_request on invalid JSON or schema mismatch. */

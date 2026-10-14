@@ -43,6 +43,7 @@ Production mode: `npm run build && npm run start -w @sc/web`.
 | `LLM_MODEL_VERIFY` | the **different** model that blindly re-answers every generated quiz question (**cross-model validation**); we use `gemini-3.5-flash-lite` against `gemini-3.1-flash-lite` for generation |
 | `LLM_MODEL_FALLBACK` | optional: used when a model is overloaded or out of quota on every key (default: `LLM_MODEL_FAST`), so a demo never fails on a 503/429 |
 | `EMBED_MODEL` | embedding model (`gemini-embedding-001`, 768 dimensions) |
+| `SESSION_SECRET` | optional, ≥32 chars; signs login cookies. If unset, a random secret is generated once into `data/cache/session-secret` |
 | `REFUSAL_TAU` | retrieval similarity floor below which the tutor declines without calling the LLM (we use 0.60) |
 | `COURSE_NAME` | name of the default course; it's given to every prompt as context |
 
@@ -54,7 +55,7 @@ Production mode: `npm run build && npm run start -w @sc/web`.
 4. **Quiz report:** your score, mastery before → after per topic, misconceptions, cited feedback, and what to revisit.
 5. **Dashboard:** mastery per topic with prerequisites, weak topics with "revise here" links and one-click practice, plus a mastery history.
 
-The learner picker in the header switches students; `?learner=<id>` in any URL selects one.
+Sign in (or create an account) from the header. Each account's tutor history, quizzes and mastery map are private: the server checks a signed HttpOnly session cookie on every learner-scoped route (401 otherwise). Course material is shared. Passwords are hashed with scrypt.
 
 ## How it works
 
@@ -119,7 +120,7 @@ Test sets:
 
 ## Honest limitations
 
-- **No authentication.** Students are picked in the header, so this is a local, single-machine demo. Anyone with access to the server can see every learner's data.
+- **Simple accounts.** Name + password with a signed session cookie; no email verification, password reset or roles. Course material is shared by all accounts; anyone can upload. Learners created through `POST /api/learners` (used by the eval tools and tests) have no password and stay open.
 - **RAG metrics:** they use the RAGAS definitions with a Gemini judge from the same model family, not the `ragas` package itself. The test set is small and team-built.
 - **Speech:** transcription is done by Gemini (no separate speech-recognition engine). Word accuracy on our real lecture video hasn't been measured against a human transcript.
 - **Slides:** diagrams drawn with PowerPoint shapes (not pictures) lose their layout. Charts aren't extracted (they're noted in the slide chunk).
