@@ -1,6 +1,7 @@
 "use client";
-// Landing-page evidence, all live: the course's real sources and topics, and the selected learner's
+// Landing-page evidence, all live: the course's real sources and topics, and the signed-in learner's
 // latest grounded tutor answer. Nothing here is sample data; empty states say what to do next.
+// Signed out, nothing about the course is shown: visitors see a sign-in prompt instead.
 import type { ChatMessageView, SourceView, TopicView, TutorBlock } from "@sc/schemas";
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -11,18 +12,38 @@ import { formatDate } from "@/lib/format";
 
 const STATUS: Record<SourceView["status"], string> = { PENDING: "Waiting", PROCESSING: "Processing", READY: "Ready", FAILED: "Failed" };
 
+function SignInPrompt({ text }: { text: string }) {
+  return (
+    <p className="mt-4 text-meta text-graphite">
+      <Link href="/login" className="text-ink underline underline-offset-2">Sign in</Link> {text}
+    </p>
+  );
+}
+
 export function LiveStats() {
+  const { learner, ready: sessionReady } = useLearner();
   const [sources, setSources] = useState<SourceView[] | null>(null);
   const [topics, setTopics] = useState<TopicView[]>([]);
   useEffect(() => {
+    if (!learner) return;
     Promise.all([api.listSources(), api.listTopics()]).then(([s, t]) => { setSources(s); setTopics(t); }).catch(() => setSources([]));
-  }, []);
+  }, [learner]);
+  if (!sessionReady) return null;
+  if (!learner) {
+    return (
+      <figure className="lg:col-span-4 lg:col-start-9">
+        <div className="h-px w-full bg-rule-strong" />
+        <figcaption className="mt-4 text-meta text-graphite">Your course</figcaption>
+        <SignInPrompt text="to see your course: its sources, cited excerpts and topics." />
+      </figure>
+    );
+  }
   if (!sources) return null;
   const ready = sources.filter((s) => s.status === "READY");
   return (
     <figure className="lg:col-span-4 lg:col-start-9">
       <div className="h-px w-full bg-rule-strong" />
-      <figcaption className="mt-4 text-meta text-graphite">Your course right now</figcaption>
+      <figcaption className="mt-4 text-meta text-graphite">Your course right now · live from the database</figcaption>
       <dl className="mt-4 grid grid-cols-3 gap-4">
         {[["sources", ready.length], ["cited chunks", ready.reduce((n, s) => n + s.chunkCount, 0)], ["topics", topics.length]].map(([label, n]) => (
           <div key={label as string}>
@@ -31,7 +52,17 @@ export function LiveStats() {
           </div>
         ))}
       </dl>
-      {ready.length === 0 && <p className="mt-4 text-meta text-graphite">Nothing ingested yet: add a PDF, a deck or a lecture video.</p>}
+      {ready.length === 0 ? (
+        <p className="mt-4 text-meta text-graphite">Nothing ingested yet: add a PDF, a deck or a lecture video.</p>
+      ) : (
+        <ul className="mt-4 space-y-1 text-meta text-graphite">
+          {ready.map((s) => (
+            <li key={s.id} className="truncate" title={s.filename}>
+              <Link href="/sources" className="hover:text-ink">{s.filename}</Link> · {s.chunkCount} chunks
+            </li>
+          ))}
+        </ul>
+      )}
     </figure>
   );
 }
@@ -80,10 +111,14 @@ export function LiveGrounding() {
 }
 
 export function LiveSources() {
+  const { learner, ready: sessionReady } = useLearner();
   const [sources, setSources] = useState<SourceView[] | null>(null);
   useEffect(() => {
+    if (!learner) return;
     api.listSources().then(setSources).catch(() => setSources([]));
-  }, []);
+  }, [learner]);
+  if (!sessionReady) return null;
+  if (!learner) return <div className="mt-10"><SignInPrompt text="to see the sources in your course." /></div>;
   if (!sources) return null;
   if (sources.length === 0) return <p className="mt-10 text-body text-graphite">No sources yet. <Link href="/sources" className="text-ink underline underline-offset-2">Add your course material</Link>.</p>;
   return (

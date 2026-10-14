@@ -93,8 +93,8 @@ export function AccountControl() {
   );
 }
 
-/** Pages with personal data (tutor, quiz, report, dashboard). Others render as they are. */
-const PRIVATE = ["/tutor", "/quiz", "/dashboard"];
+/** Pages that need an account: personal data (tutor, quiz, report, dashboard) and the course itself (sources). */
+const PRIVATE = ["/tutor", "/quiz", "/dashboard", "/sources"];
 
 /** Shows a sign-in prompt instead of a private page when nobody is signed in. */
 export function LearnerGate({ children }: { children: ReactNode }) {
@@ -106,7 +106,7 @@ export function LearnerGate({ children }: { children: ReactNode }) {
   return (
     <main className="mx-auto w-full max-w-md px-4 py-20 text-center">
       <h1 className="font-display text-title text-ink">Sign in to continue</h1>
-      <p className="mt-3 text-body text-graphite">Your tutor conversations, quizzes and mastery map are private to your account.</p>
+      <p className="mt-3 text-body text-graphite">Your course, tutor conversations, quizzes and mastery map are only shown to signed-in accounts.</p>
       <Link
         href={`/login?next=${encodeURIComponent(pathname)}`}
         className="mt-8 inline-flex h-11 items-center rounded-card bg-ink px-6 text-body text-paper transition-opacity hover:opacity-85 active:opacity-70"
