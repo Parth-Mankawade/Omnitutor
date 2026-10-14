@@ -22,6 +22,8 @@ describe("paths agree with the registry", () => {
     login: paths.login(),
     logout: paths.logout(),
     session: paths.session(),
+    getProfile: paths.profile(),
+    saveProfile: paths.profile(),
     listSources: paths.sources(),
     uploadSource: paths.uploadSource("Galvin – Ch5 (CPU).pdf"),
     deleteSource: paths.source("src/1"),

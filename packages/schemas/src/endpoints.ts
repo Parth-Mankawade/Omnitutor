@@ -4,6 +4,7 @@ import {
   SourceView, TopicView, UploadQuery, UploadResponse,
 } from "./course";
 import { Credentials, SessionView } from "./auth";
+import { LearnerProfile, ProfileView } from "./profile";
 import { EvalAnswerRequest, EvalAnswerResponse } from "./eval";
 import { MasteryView } from "./mastery";
 import { CreateQuizRequest, Quiz, QuizReport, SubmitRequest } from "./quiz";
@@ -38,6 +39,8 @@ export const endpoints = {
   login: { method: "POST", path: "/api/auth/login", query: null, request: Credentials, response: Learner, status: "live", module: 16 },
   logout: { method: "POST", path: "/api/auth/logout", query: null, request: null, response: SessionView, status: "live", module: 16 },
   session: { method: "GET", path: "/api/auth/session", query: null, request: null, response: SessionView, status: "live", module: 16 },
+  getProfile: { method: "GET", path: "/api/profile", query: null, request: null, response: ProfileView, status: "live", module: 17 },
+  saveProfile: { method: "POST", path: "/api/profile", query: null, request: LearnerProfile, response: ProfileView, status: "live", module: 17 },
   listSources: { method: "GET", path: "/api/sources", query: null, request: null, response: z.array(SourceView), status: "live", module: 4 },
   uploadSource: { method: "POST", path: "/api/sources", query: UploadQuery, request: "binary", response: UploadResponse, status: "live", module: 4 },
   deleteSource: { method: "DELETE", path: "/api/sources/[id]", query: null, request: null, response: DeleteSourceResponse, status: "live", module: 4 },

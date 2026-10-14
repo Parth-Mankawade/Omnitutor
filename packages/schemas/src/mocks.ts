@@ -152,6 +152,8 @@ export const mocks = {
   login: { id: "learner-asha", name: "Asha", createdAt: at(5) },
   logout: { learner: null },
   session: { learner: { id: "learner-asha", name: "Asha", createdAt: at(5) } },
+  getProfile: { profile: { tone: "friendly", style: "step_by_step", level: "new", goal: "exam" } },
+  saveProfile: { profile: { tone: "funny", style: "examples_first", level: "some", goal: "understand" } },
   buildCourse: { topics },
   listTopics: topics,
   chat: tutorAnswer,

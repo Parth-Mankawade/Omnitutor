@@ -94,7 +94,7 @@ export function AccountControl() {
 }
 
 /** Pages that need an account: personal data (tutor, quiz, report, dashboard) and the course itself (sources). */
-const PRIVATE = ["/tutor", "/quiz", "/dashboard", "/sources"];
+const PRIVATE = ["/tutor", "/quiz", "/dashboard", "/sources", "/onboarding"];
 
 /** Shows a sign-in prompt instead of a private page when nobody is signed in. */
 export function LearnerGate({ children }: { children: ReactNode }) {

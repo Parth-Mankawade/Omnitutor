@@ -5,7 +5,7 @@
 import { z } from "zod";
 import {
   ApiErrorBody, MAX_UPLOAD_BYTES, MAX_UPLOAD_MB, endpoints, paths, sourceTypeFromFilename,
-  type ApiErrorCode, type BuildRequest, type ChatRequest, type Credentials, type CreateLearnerRequest, type CreateQuizRequest,
+  type ApiErrorCode, type BuildRequest, type ChatRequest, type Credentials, type LearnerProfile, type CreateLearnerRequest, type CreateQuizRequest,
   type EndpointName, type EndpointResponse, type EvalAnswerRequest, type SearchRequest, type SubmitRequest,
 } from "@sc/schemas";
 import { mocks } from "@sc/schemas/mocks";
@@ -110,6 +110,8 @@ export function createApiClient(options: ApiClientOptions = {}) {
     login: (body: Credentials) => sendJson("login", paths.login(), body),
     logout: () => send("logout", paths.logout(), { method: "POST" }),
     session: () => get("session", paths.session()),
+    getProfile: () => get("getProfile", paths.profile()),
+    saveProfile: (body: LearnerProfile) => sendJson("saveProfile", paths.profile(), body),
 
     listSources: () => get("listSources", paths.sources()),
     /** Uploads raw file bytes. Type comes from the extension (.pdf / .pptx / .mp4); max MAX_UPLOAD_MB. */

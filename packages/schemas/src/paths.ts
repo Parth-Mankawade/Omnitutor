@@ -10,6 +10,7 @@ export const paths = {
   login: () => "/api/auth/login",
   logout: () => "/api/auth/logout",
   session: () => "/api/auth/session",
+  profile: () => "/api/profile",
   sources: () => "/api/sources",
   uploadSource: (filename: string) => `/api/sources?${qs({ filename })}`,
   source: (id: string) => `/api/sources/${seg(id)}`,

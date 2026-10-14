@@ -10,7 +10,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { prisma, type Learner as LearnerRow } from "@sc/db";
 import type { Credentials, Learner } from "@sc/schemas";
-import { AppError, badRequest, notFound } from "./errors";
+import { DEFAULT_COURSE_ID, requireCourse } from "./course";
+import { AppError, badRequest, notFound, notReady } from "./errors";
 import { repoRoot } from "./storage";
 
 export const SESSION_COOKIE = "omnitutor_session";
@@ -109,4 +110,44 @@ export async function authorizeLearner(learnerId: string, sessionLearnerId: stri
 export async function authorizeAssessment(assessmentId: string, sessionLearnerId: string | null): Promise<void> {
   const a = await prisma.assessment.findUnique({ where: { id: assessmentId }, select: { learnerId: true } });
   if (a) await authorizeLearner(a.learnerId, sessionLearnerId);
+}
+
+/**
+ * Course privacy: each account has its own course (created on first use); everything uploaded,
+ * built, asked or quizzed while signed in lives there. A course is accessible exactly when its owner
+ * is the session's learner (ownerless shared courses: only without a session, i.e. tools and tests).
+ * Returns the course id to use for this request.
+ */
+export async function courseFor(sessionLearnerId: string | null, requested?: string): Promise<string> {
+  if (requested) {
+    const course = await prisma.course.findUnique({ where: { id: requested }, select: { ownerId: true } });
+    if (!course) throw notReady(`Course "${requested}" not found.`);
+    if ((course.ownerId ?? null) !== sessionLearnerId) throw unauthorized("This course belongs to another account.");
+    return requested;
+  }
+  if (!sessionLearnerId) return requireCourse();
+  return ownCourse(sessionLearnerId);
+}
+
+/** The account's private course, created on first use (named like the default course, or COURSE_NAME). */
+export async function ownCourse(learnerId: string): Promise<string> {
+  const existing = await prisma.course.findUnique({ where: { ownerId: learnerId }, select: { id: true } });
+  if (existing) return existing.id;
+  const learner = await prisma.learner.findUnique({ where: { id: learnerId }, select: { passwordHash: true } });
+  if (!learner?.passwordHash) throw unauthorized("Your session has expired. Sign in again.");
+  const name = process.env.COURSE_NAME?.trim() || (await prisma.course.findUnique({ where: { id: DEFAULT_COURSE_ID }, select: { name: true } }))?.name || "My course";
+  try {
+    return (await prisma.course.create({ data: { name, ownerId: learnerId }, select: { id: true } })).id;
+  } catch {
+    // Two first requests at once: the other one created it (ownerId is unique).
+    const raced = await prisma.course.findUnique({ where: { ownerId: learnerId }, select: { id: true } });
+    if (raced) return raced.id;
+    throw new AppError("internal", "Could not create your course.");
+  }
+}
+
+/** Source routes (delete, ingest, file): the source's course must be accessible to this session (unknown source → the service's 404). */
+export async function authorizeSource(sourceId: string, sessionLearnerId: string | null): Promise<void> {
+  const source = await prisma.source.findUnique({ where: { id: sourceId }, select: { course: { select: { ownerId: true } } } });
+  if (source && (source.course.ownerId ?? null) !== sessionLearnerId) throw unauthorized("This file belongs to another account.");
 }

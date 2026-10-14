@@ -6,6 +6,7 @@ export * from "./paths";
 export * from "./citation";
 export * from "./course";
 export * from "./auth";
+export * from "./profile";
 export * from "./tutor";
 export * from "./quiz";
 export * from "./mastery";

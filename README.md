@@ -56,7 +56,7 @@ Production mode: `npm run build && npm run start -w @sc/web`.
 4. **Quiz report:** your score, mastery before → after per topic, misconceptions, cited feedback, and what to revisit.
 5. **Dashboard:** mastery per topic with prerequisites, weak topics with "revise here" links and one-click practice, plus a mastery history.
 
-Sign in (or create an account) from the header. Each account's tutor history, quizzes and mastery map are private: the server checks a signed HttpOnly session cookie on every learner-scoped route (401 otherwise). Course material is shared. Passwords are hashed with scrypt.
+Sign in (or create an account) from the header. **Each account has its own private course**: the files it uploads, its topics, tutor history, quizzes and mastery map are visible only to that account. The server enforces this on every route (a signed HttpOnly session cookie; another account's course, file or data returns 401). Passwords are hashed with scrypt. Requests without a session (the eval scripts and e2e tests) use the shared demo course.
 
 ## How it works
 
@@ -123,14 +123,14 @@ Test sets:
 
 ## Honest limitations
 
-- **Simple accounts.** Name + password with a signed session cookie; no email verification, password reset or roles. Course material is shared by all accounts; anyone can upload. Learners created through `POST /api/learners` (used by the eval tools and tests) have no password and stay open.
+- **Simple accounts.** Name + password with a signed session cookie; no email verification, password reset or roles. Each account's course is private; requests without a session use the shared demo course. Learners created through `POST /api/learners` (used by the eval tools and tests) have no password and stay open.
 - **RAG metrics:** they use the RAGAS definitions with a Gemini judge from the same model family, not the `ragas` package itself. The test set is small and team-built.
 - **Speech:** transcription is done by Gemini (no separate speech-recognition engine). Word accuracy on our real lecture video hasn't been measured against a human transcript.
 - **Slides:** diagrams drawn with PowerPoint shapes (not pictures) lose their layout. Charts aren't extracted (they're noted in the slide chunk).
 - **Retrieval:** dense search only (no keyword/hybrid search or reranking); weakest on pages of source code.
 - **Topics:** topics + prerequisites + concepts (concepts are grouped labels, not a planned hierarchy). On our demo course, 79% of sampled chunks were tagged to the expected topic.
 - **Security:** course actions aren't tied to accounts: anyone who can reach the server can upload or delete sources and force a topic rebuild (which erases every learner's progress on those topics). Login attempts aren't rate-limited. Fine for a local, single-machine demo; roles would be needed before sharing a server.
-- **Other:** single course per installation; old `.ppt`, images and URLs are not accepted.
+- **Other:** one course per account (no multiple notebooks yet); old `.ppt`, images and URLs are not accepted.
 
 ## Repo layout
 
