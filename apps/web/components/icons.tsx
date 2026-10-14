@@ -89,3 +89,130 @@ export function BookOpenIcon(props: IconProps) {
     </Icon>
   );
 }
+
+/** Source: Lucide `upload` (ISC). */
+export function UploadIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="17 8 12 3 7 8" />
+      <line x1="12" x2="12" y1="3" y2="15" />
+    </Icon>
+  );
+}
+
+/** Source: Lucide `message-square` (ISC). */
+export function MessageIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+    </Icon>
+  );
+}
+
+/** Source: Lucide `target` (ISC). */
+export function TargetIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="12" r="10" />
+      <circle cx="12" cy="12" r="6" />
+      <circle cx="12" cy="12" r="2" />
+    </Icon>
+  );
+}
+
+/** Flashcards. Source: Lucide `layers` (ISC). */
+export function LayersIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z" />
+      <path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65" />
+      <path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65" />
+    </Icon>
+  );
+}
+
+/** Course map. Source: Lucide `network` (ISC). */
+export function NetworkIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="16" y="16" width="6" height="6" rx="1" />
+      <rect x="2" y="16" width="6" height="6" rx="1" />
+      <rect x="9" y="2" width="6" height="6" rx="1" />
+      <path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3" />
+      <path d="M12 12V8" />
+    </Icon>
+  );
+}
+
+/** Source: Lucide `trending-up` (ISC). */
+export function TrendingUpIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <polyline points="22 7 13.5 15.5 8.5 10.5 2 17" />
+      <polyline points="16 7 22 7 22 13" />
+    </Icon>
+  );
+}
+
+/** Source: Lucide `notebook` (ISC). */
+export function NotebookIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M2 6h4" />
+      <path d="M2 10h4" />
+      <path d="M2 14h4" />
+      <path d="M2 18h4" />
+      <rect width="16" height="20" x="4" y="2" rx="2" />
+      <path d="M16 2v20" />
+    </Icon>
+  );
+}
+
+/** Source: Lucide `chevron-down` (ISC). */
+export function ChevronDownIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="m6 9 6 6 6-6" />
+    </Icon>
+  );
+}
+
+/** Source: Lucide `check` (ISC). */
+export function CheckIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M20 6 9 17l-5-5" />
+    </Icon>
+  );
+}
+
+/** Source: Lucide `plus` (ISC). */
+export function PlusIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M5 12h14" />
+      <path d="M12 5v14" />
+    </Icon>
+  );
+}
+
+/** Source: Lucide `x` (ISC). */
+export function CloseIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
+    </Icon>
+  );
+}
+
+/** Source: Lucide `arrow-right` (ISC). */
+export function ArrowRightIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M5 12h14" />
+      <path d="m12 5 7 7-7 7" />
+    </Icon>
+  );
+}

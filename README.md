@@ -56,7 +56,7 @@ Production mode: `npm run build && npm run start -w @sc/web`.
 4. **Quiz report:** your score, mastery before → after per topic, misconceptions, cited feedback, and what to revisit.
 5. **Dashboard:** mastery per topic with prerequisites, weak topics with "revise here" links and one-click practice, plus a mastery history.
 
-Sign in (or create an account) from the header. **Each account has its own private course**: the files it uploads, its topics, tutor history, quizzes and mastery map are visible only to that account. The server enforces this on every route (a signed HttpOnly session cookie; another account's course, file or data returns 401). Passwords are hashed with scrypt. Requests without a session (the eval scripts and e2e tests) use the shared demo course.
+Sign in (or create an account) from the header. **Each account has its own private notebooks** (one per subject): the files uploaded to a notebook, its topics, tutor history, quizzes, flashcards and mastery are visible only to that account. The server enforces this on every route (a signed HttpOnly session cookie; another account's course, file or data returns 401). Passwords are hashed with scrypt. Requests without a session (the eval scripts and e2e tests) use the shared demo course.
 
 ## Features at a glance
 
@@ -144,8 +144,8 @@ Off-material: **17 of 21 declined**; the other 4 (numerical problems for algorit
 - **Slides:** diagrams drawn with PowerPoint shapes (not pictures) lose their layout. Charts aren't extracted (they're noted in the slide chunk).
 - **Retrieval:** dense search only (no keyword/hybrid search or reranking); weakest on pages of source code.
 - **Topics:** topics + prerequisites + concepts (concepts are grouped labels, not a planned hierarchy). On our demo course, 79% of sampled chunks were tagged to the expected topic.
-- **Security:** course actions aren't tied to accounts: anyone who can reach the server can upload or delete sources and force a topic rebuild (which erases every learner's progress on those topics). Login attempts aren't rate-limited. Fine for a local, single-machine demo; roles would be needed before sharing a server.
-- **Other:** one course per account (no multiple notebooks yet); old `.ppt`, images and URLs are not accepted.
+- **Security:** signed-in actions are limited to the account's own notebooks, but requests without a session act on the shared demo course (used by the eval tools and tests), and login attempts aren't rate-limited. Fine for a local, single-machine demo; not hardened for a shared server.
+- **Other:** old `.ppt`, images and URLs are not accepted.
 
 ## Repo layout
 

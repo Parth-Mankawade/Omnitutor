@@ -6,6 +6,7 @@ import type { ChatMessageView, SourceView, TopicView, TutorBlock } from "@sc/sch
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useLearner } from "@/components/learner";
+import { ArrowRightIcon, LayersIcon, MessageIcon, NetworkIcon, TargetIcon, TrendingUpIcon, UploadIcon } from "@/components/icons";
 import { Locator } from "@/components/locator";
 import { api } from "@/lib/api";
 import { formatDate } from "@/lib/format";
@@ -172,12 +173,12 @@ export function StudyHub() {
   if (!learner || !hub) return null;
   const empty = hub.sources === 0;
   const tiles = [
-    { href: "/sources", emoji: "📚", title: empty ? "Add your material" : "Sources", text: empty ? "Upload a PDF, slides or a lecture video to start" : `${hub.sources} file${hub.sources === 1 ? "" : "s"} · ${hub.topics} topics`, accent: empty },
-    { href: "/tutor", emoji: "💬", title: "Ask your tutor", text: "Explanations from your material, with sources", accent: false },
-    { href: hub.needsDiagnostic ? "/quiz?kind=DIAGNOSTIC" : "/quiz", emoji: "🎯", title: hub.needsDiagnostic ? "Take the diagnostic" : "Quiz yourself", text: hub.needsDiagnostic ? "One question per topic to calibrate your map" : hub.weak ? `${hub.weak} weak topic${hub.weak === 1 ? "" : "s"} to work on` : "Adaptive questions at your level", accent: !empty && hub.needsDiagnostic },
-    { href: "/flashcards", emoji: "🃏", title: "Flashcards", text: hub.cards ? `${hub.due} due now · ${hub.cards} cards` : "Make verified cards per topic", accent: hub.due > 0 },
-    { href: "/map", emoji: "🗺️", title: "Course map", text: "Topics, concepts and your mastery at a glance", accent: false },
-    { href: "/dashboard", emoji: "📈", title: "Your progress", text: "Mastery per topic and what changed", accent: false },
+    { href: "/sources", Icon: UploadIcon, title: empty ? "Add your material" : "Sources", text: empty ? "Upload a PDF, slides or a lecture video to start" : `${hub.sources} file${hub.sources === 1 ? "" : "s"} · ${hub.topics} topics`, accent: empty },
+    { href: "/tutor", Icon: MessageIcon, title: "Ask your tutor", text: "Explanations from your material, with sources", accent: false },
+    { href: hub.needsDiagnostic ? "/quiz?kind=DIAGNOSTIC" : "/quiz", Icon: TargetIcon, title: hub.needsDiagnostic ? "Take the diagnostic" : "Quiz yourself", text: hub.needsDiagnostic ? "One question per topic to calibrate your map" : hub.weak ? `${hub.weak} weak topic${hub.weak === 1 ? "" : "s"} to work on` : "Adaptive questions at your level", accent: !empty && hub.needsDiagnostic },
+    { href: "/flashcards", Icon: LayersIcon, title: "Flashcards", text: hub.cards ? `${hub.due} due now · ${hub.cards} cards` : "Make verified cards per topic", accent: hub.due > 0 },
+    { href: "/map", Icon: NetworkIcon, title: "Course map", text: "Topics, concepts and your mastery at a glance", accent: false },
+    { href: "/dashboard", Icon: TrendingUpIcon, title: "Your progress", text: "Mastery per topic and what changed", accent: false },
   ];
   return (
     <section aria-labelledby="hub-title" className="px-4 pt-10 sm:px-6">
@@ -186,11 +187,17 @@ export function StudyHub() {
         <ul className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {tiles.map((t) => (
             <li key={t.title}>
-              <Link href={t.href} className={`group flex h-full items-start gap-4 rounded-2xl border p-5 transition-all hover:-translate-y-0.5 hover:shadow-md ${t.accent ? "border-proof bg-proof-ground" : "border-rule bg-surface hover:border-ink"}`}>
-                <span className="text-2xl" aria-hidden="true">{t.emoji}</span>
-                <span>
-                  <span className="block font-medium text-ink">{t.title} <span aria-hidden="true" className="inline-block transition-transform group-hover:translate-x-0.5">→</span></span>
+              <Link href={t.href} className={`group flex h-full items-start gap-4 rounded-2xl border bg-surface p-5 transition-all hover:-translate-y-0.5 hover:border-ink hover:shadow-md ${t.accent ? "border-proof/60" : "border-rule"}`}>
+                <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${t.accent ? "bg-proof text-white" : "bg-paper text-ink ring-1 ring-rule"}`}>
+                  <t.Icon size={20} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-1.5 font-medium text-ink">
+                    {t.title}
+                    <ArrowRightIcon size={15} className="text-graphite transition-transform group-hover:translate-x-0.5 group-hover:text-ink" />
+                  </span>
                   <span className="mt-1 block text-sm text-graphite">{t.text}</span>
+                  {t.accent && <span className="mt-2 inline-block rounded-full bg-proof-ground px-2 py-0.5 text-[11px] font-medium text-proof-ink">Next step</span>}
                 </span>
               </Link>
             </li>
