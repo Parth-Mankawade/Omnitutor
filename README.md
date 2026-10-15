@@ -78,15 +78,27 @@ Sign in (or create an account) from the header. **Each account has its own priva
 
 ## How it works
 
-```
-Browser (Next.js pages) ──@sc/client──► Next.js API routes (Zod-validated contract)
-                                              │
-                                   @sc/core (TypeScript)
-     ingest (PDF · PPTX · MP4) → chunks with page/slide/timestamp → embeddings
-     course build → topics + prerequisites;  retrieval → tutor (grounding guards)
-     quiz (generate → code checks → blind verify) → grading → BKT learner model
-                                              │
-                 PostgreSQL (Prisma)   ·   Gemini API (generation, embeddings, Files API)
+```mermaid
+flowchart TB
+  UI["Browser: Next.js pages"] -- "@sc/client" --> API["Next.js API routes<br/>(Zod-validated contract)"]
+  API --> CORE
+
+  subgraph CORE["@sc/core (TypeScript)"]
+    direction LR
+    subgraph ING["Ingestion"]
+      direction LR
+      IN["ingest<br/>PDF · PPTX · MP4"] --> CH["chunks with<br/>page / slide / timestamp"] --> EM["embeddings"]
+    end
+    subgraph LEARN["Learning"]
+      direction LR
+      CB["course build<br/>topics + prerequisites"]
+      RT["retrieval"] --> TU["tutor<br/>(grounding guards)"]
+      QZ["quiz<br/>generate → code checks → blind verify"] --> GR["grading"] --> BKT["BKT learner model"]
+    end
+  end
+
+  CORE --> DB[("PostgreSQL (Prisma)")]
+  CORE --> GEM["Gemini API<br/>generation · embeddings · Files API"]
 ```
 
 - **Ingestion is multimodal, with no manual preprocessing.**
@@ -167,4 +179,4 @@ Off-material: **17 of 21 declined**; the other 4 (numerical problems for algorit
 | `data/eval` | committed evaluation reports shown on the Evaluation page |
 | `docs` | [JUDGES.md](docs/JUDGES.md) (start here), [ARCHITECTURE.md](docs/ARCHITECTURE.md), [API_SPEC.md](docs/API_SPEC.md), [INGESTION_SPEC.md](docs/INGESTION_SPEC.md), [PROGRESS.md](docs/PROGRESS.md), [index.html](docs/index.html) (diagram); the lower-case notes are early design proposals |
 
-Team: Parth Mankawade, Ojas Mohbansi.
+Team: Parth Mankawade, Ojas Mohbansi, Bhavya Gautam.
