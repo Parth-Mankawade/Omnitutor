@@ -18,7 +18,9 @@ Students learn from three formats at once: a recorded lecture, a textbook chapte
 - **Verified adaptive quizzes:** MCQ, short-answer and numerical questions on the topics a student chooses. Each question is tagged with its topic, source and difficulty, and targets weak topics. A *second, different model* checks every answer blind before the question is shown, and numerical answers are checked in code (±1%). Questions never repeat.
 - **Feedback and reports:** feedback is cited. Wrong MCQ options carry misconception labels. The post-quiz report shows the score and mastery change per topic, the misconceptions and where to revise.
 - **Learner model:** per-topic mastery (Bayesian Knowledge Tracing). It is updated after every quiz answer and, with reduced weight, after tutor conversations. New learners start with a diagnostic quiz.
-- **Private accounts:** each student signs in; their conversations, quizzes and mastery are private (enforced on the server with a signed session cookie; passwords hashed with scrypt).
+- **Personalisation:** onboarding (tutor personality, which also sets the sampling temperature; explanation style; level; goal) shapes every answer, and the tutor adapts depth to the student's measured mastery.
+- **Private accounts and notebooks:** each student signs in and keeps one private notebook per subject: files, chats, quizzes, flashcards and mastery (enforced on the server; passwords hashed with scrypt).
+- **Course map and flashcards:** a mind map of topics, concepts and prerequisites coloured by mastery; verified, cited flashcards with spaced repetition.
 - **Dashboard:** mastery per topic, prerequisites, weak topics with revise links, and mastery history.
 
 ### How we built it
@@ -36,19 +38,19 @@ Students learn from three formats at once: a recorded lecture, a textbook chapte
   - a usage ledger;
   - multi-key rotation on quota errors;
   - a backup model when one is overloaded.
-- **Testing:** 270 unit/DB tests, 35 end-to-end API tests, a real-browser smoke test of the signed-in flow, and pre-registered acceptance checks on real course files.
+- **Testing:** unit/DB tests, end-to-end API tests, a real-browser test of the signed-in flow, and pre-registered acceptance checks on real course files (results in docs/PROGRESS.md).
 
 ### Evaluation (real data, measured)
 | What | Result |
 |---|---|
 | Ingestion facts recovered (PDF / PPTX / video) | 47/47 · 21/21 + 15/15 · 12/12 (video timestamps off by 0.3 s on average) |
 | Retrieval | correct excerpt in top 6: 100%; on 36 unseen questions, correct excerpt ranked first: 95% |
-| Tutor citations correct | 97% (29/30) |
-| Off-material refusal | 90% refused, 0/30 false refusals |
-| RAGAS-style metrics (Gemini judge) | faithfulness 0.98 · answer relevancy 0.84 · context precision 0.86 · context recall 0.92 · refusal precision 1.00 |
+| Tutor citation accuracy (58-question test set) | 1.00 (37/37 answerable) |
+| Off-material | 17/21 declined, the other 4 flagged partly covered; 0/37 answerable wrongly declined |
+| RAGAS-style metrics (judged by a different Gemini model) | faithfulness 0.95 · answer relevancy 0.85 · context precision 0.92 · context recall 0.94 · refusal precision 1.00 |
 | Quiz checks | 16/16; the verifier rejected 6 flawed candidates |
 | Short-answer grading | 12/12 correct verdicts |
-| Simulated students, adaptive vs random quizzing | mastery gain 74.4% vs 63.7% (novice), 48.4% vs 41.5% (basics); repetition 0% vs ~30%; lower estimation error |
+| Simulated students, adaptive vs random quizzing | mastery gain 0.73 vs 0.64 (novice), 0.48 vs 0.41 (basics), 0.39 vs 0.35 overall; repetition 0% vs 30%; lower estimation error |
 
 Caveat: the simulated students use different parameters from the tutor's learner model, to avoid a self-fulfilling result.
 
@@ -67,17 +69,17 @@ Caveat: the simulated students use different parameters from the tutor's learner
 Grounding is mostly engineering around the model: retrieval, validation and refusal rules matter more than the prompt.
 
 ### Limitations (honest)
-- Accounts are basic: no email verification or password reset; one private course per account (no multiple notebooks yet).
+- Accounts are basic: no email verification or password reset.
 - Runs locally (no deployment, as the track allows).
 - Diagrams drawn only with PowerPoint shapes lose their layout.
 - Video files must be at most 20 minutes.
 - Gemini is the only model provider.
 
 ### What's next
-- Per-account courses and roles (teacher / student).
-- Hindi/Hinglish answers.
-- A visual course map.
-- Spaced-repetition revision schedules.
+- Roles (teacher / student) and shared class notebooks.
+- A Hindi/Hinglish toggle and audio explanations.
+- A study planner driven by mastery and exam dates.
+- A study with real students to confirm the simulated learning gains.
 
 **Built with:** nextjs, typescript, react, tailwindcss, postgresql, prisma, gemini, zod, recharts, docker
 
@@ -106,4 +108,4 @@ Tips:
 - [ ] Real full names of both teammates in the README and on Devpost.
 - [ ] Demo video uploaded to YouTube (unlisted is fine), 3–10 min, English; link added to Devpost.
 - [ ] Devpost: description (section 1), repo link, video link, "Built with" tags, Track D selected.
-- [ ] Submit before 11:30 PM (deadline 12:00 AM, 15 Oct).
+- [ ] Submit before the deadline (12:00 PM, 15 Oct).

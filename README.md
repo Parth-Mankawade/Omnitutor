@@ -2,6 +2,8 @@
 
 **IIT Mandi Multimodal AI Hackathon 2026, Track D: Personalized Tutoring & Adaptive Learning**
 
+> **Judges:** start with [docs/JUDGES.md](docs/JUDGES.md): a 10-minute tour, each Track D requirement mapped to code and measured results, and a map of the docs.
+
 Upload a lecture **video**, a **textbook PDF** and a **slide deck**. Omnitutor turns them into a source-cited knowledge base and uses it to:
 
 - **Tutor you.** Every claim cites the exact **page, slide or timestamp**, which opens beside the answer. Questions your material doesn't cover are declined, and anything from outside your sources is labelled as such.
@@ -16,7 +18,6 @@ Upload a lecture **video**, a **textbook PDF** and a **slide deck**. Omnitutor t
 - **Node.js** ≥ 20.12 (developed on 24) and npm
 - **Docker Desktop**, which runs PostgreSQL only
 - A **Gemini API key** from [Google AI Studio](https://aistudio.google.com/apikey). The free tier works.
-- Optional: Python 3.11+ only for the optional `ragas` cross-check, if you add it. Nothing else needs Python.
 
 ## Setup and run
 
@@ -24,12 +25,16 @@ Upload a lecture **video**, a **textbook PDF** and a **slide deck**. Omnitutor t
 npm install
 cp .env.example .env        # then set APP_GEMINI_API_KEY (or several keys, see below) and the model IDs
 npm run db:up               # PostgreSQL on localhost:5434
-npm run db:deploy           # apply the database migration
-npm run db:seed             # default course + a demo learner (set COURSE_NAME in .env first)
+npm run db:deploy           # apply the database migrations
+npm run db:seed             # optional: shared demo course used by the eval tools and tests
 npm run dev                 # http://localhost:3000
 ```
 
 Production mode: `npm run build && npm run start -w @sc/web`.
+
+Then open http://localhost:3000, **create an account** and answer the four onboarding questions. Sample material: use any lecture PDF, `.pptx` deck and `.mp4` (up to 20 min) of your own. Our evaluation files are third-party course material and are not redistributed ([data/demo/README.md](data/demo/README.md)).
+
+Windows: stop the dev server before `npm install` or `npm run db:generate` (Prisma's engine DLL is locked while it runs).
 
 **Health check:** `GET http://localhost:3000/api/health` returns `{"ok": true, ...}`. Add `?gemini=1` to check the key and every model; this spends no tokens.
 
@@ -50,11 +55,13 @@ Production mode: `npm run build && npm run start -w @sc/web`.
 
 ## Using it
 
-1. **Sources:** drop a PDF, a `.pptx` and an `.mp4` (up to 20 min). Processing starts automatically and you can watch the progress. Then click **Build topics**.
-2. **Quiz → Diagnostic:** one question per topic, to calibrate your mastery map.
-3. **Tutor:** ask questions. Click a citation chip to open the PDF at that page, the video at that second, or the slide.
-4. **Quiz report:** your score, mastery before → after per topic, misconceptions, cited feedback, and what to revisit.
-5. **Dashboard:** mastery per topic with prerequisites, weak topics with "revise here" links and one-click practice, plus a mastery history.
+1. **Sign up and onboarding:** four questions set the tutor's personality, explanation style, your level and your goal.
+2. **Sources:** drop a PDF, a `.pptx` and an `.mp4` (up to 20 min) into the active notebook. Processing starts automatically and you can watch the progress. Then click **Build topics**.
+3. **Quiz → Diagnostic:** one question per topic, to calibrate your mastery map. Then custom quizzes on topics you pick, or a mock exam.
+4. **Tutor:** ask questions. Click a citation chip to open the PDF at that page, the video at that second, or the slide. Your conversation is saved per notebook.
+5. **Quiz report:** your score, mastery before → after per topic, misconceptions, cited feedback, and what to revisit.
+6. **Dashboard, Map, Flashcards:** mastery per topic with prerequisites and history; the course mind map; verified, cited flashcards with spaced repetition.
+7. **Evaluation:** the measured metrics (below), read from `data/eval/`.
 
 Sign in (or create an account) from the header. **Each account has its own private notebooks** (one per subject): the files uploaded to a notebook, its topics, tutor history, quizzes, flashcards and mastery are visible only to that account. The server enforces this on every route (a signed HttpOnly session cookie; another account's course, file or data returns 401). Passwords are hashed with scrypt. Requests without a session (the eval scripts and e2e tests) use the shared demo course.
 
@@ -138,7 +145,7 @@ Off-material: **17 of 21 declined**; the other 4 (numerical problems for algorit
 
 ## Honest limitations
 
-- **Simple accounts.** Name + password with a signed session cookie; no email verification, password reset or roles. Each account's course is private; requests without a session use the shared demo course. Learners created through `POST /api/learners` (used by the eval tools and tests) have no password and stay open.
+- **Simple accounts.** Name + password with a signed session cookie; no email verification, password reset or roles. Each account's notebooks are private; requests without a session use the shared demo course. Learners created through `POST /api/learners` (used by the eval tools and tests) have no password and stay open.
 - **RAG metrics:** they use the RAGAS definitions with a Gemini judge from the same model family, not the `ragas` package itself. The test set is small and team-built.
 - **Speech:** transcription is done by Gemini (no separate speech-recognition engine). Word accuracy on our real lecture video hasn't been measured against a human transcript.
 - **Slides:** diagrams drawn with PowerPoint shapes (not pictures) lose their layout. Charts aren't extracted (they're noted in the slide chunk).
@@ -151,11 +158,13 @@ Off-material: **17 of 21 declined**; the other 4 (numerical problems for algorit
 
 | Path | Contents |
 |---|---|
-| `apps/web` | Next.js pages (`/sources`, `/tutor`, `/quiz`, `/quiz/[id]/report`, `/dashboard`) and API routes |
+| `apps/web` | Next.js pages (`/`, `/login`, `/onboarding`, `/sources`, `/tutor`, `/quiz`, `/quiz/[id]/report`, `/dashboard`, `/map`, `/flashcards`, `/evaluation`) and API routes |
 | `packages/core` | ingestion, Gemini client (rate limiter, cache, key rotation), retrieval, course build, tutor, quiz, grading, BKT, mastery |
 | `packages/db` | Prisma schema, migration, seed |
 | `packages/schemas` | shared Zod contract for every request and response |
 | `packages/client` | typed API client used by the UI and the tools |
 | `tools/e2e` | end-to-end tests, real-data checks with ground truth written before each run, evaluation and simulator |
+| `data/eval` | committed evaluation reports shown on the Evaluation page |
+| `docs` | [JUDGES.md](docs/JUDGES.md) (start here), [ARCHITECTURE.md](docs/ARCHITECTURE.md), [API_SPEC.md](docs/API_SPEC.md), [INGESTION_SPEC.md](docs/INGESTION_SPEC.md), [PROGRESS.md](docs/PROGRESS.md), [index.html](docs/index.html) (diagram); the lower-case notes are early design proposals |
 
 Team: Parth Mankawade, Ojas Mohbansi.

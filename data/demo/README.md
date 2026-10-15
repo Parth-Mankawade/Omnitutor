@@ -1,6 +1,6 @@
 # Demo dataset (files not committed)
 
-The files in this folder are gitignored (large, third-party material). Only this README is tracked. Copy them in from the dataset package (`C:\dev\data\claude_code_stage1_dataset\data\demo\`) or share them via Drive.
+The course files we evaluated on are third-party material (lecture slides, an explainer video, exam papers), so they are gitignored and **not redistributed**. Only this README and the test sets (`testset.*.json`) are tracked. To try Omnitutor, upload any lecture PDF, `.pptx` deck and `.mp4` of your own. The committed evaluation reports (`data/eval/`) record the results on these files.
 
 **Putting a file here does not process it.** Files enter the app only when uploaded (UI / Postman / `@sc/client`), and ingestion (which spends Gemini quota) only starts when explicitly requested.
 
