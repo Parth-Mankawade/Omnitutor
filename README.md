@@ -106,6 +106,52 @@ Sign in (or create an account) from the header. **Each account has its own priva
 - **Dashboard and study hub:** per-topic mastery from quizzes, tutor chats and flashcards; the home page shows what to do next.
 - **Evaluation page:** the measured RAGAS-style metrics and simulated-student results.
 
+## Screenshots and how the app works
+
+The screenshots below follow the main study workflow, from opening a course to reviewing progress.
+
+### Course home
+
+![Omnitutor course home showing the course overview and source-grounded study prompt](docs/screenshots/course-home.png)
+
+The course home introduces Omnitutor's core promise: answers are grounded in the learner's own material and cite where information came from. The course summary on the right reports live counts for uploaded sources, indexed chunks and detected topics, so learners can see what the tutor has available before continuing to study.
+
+### Sources library
+
+![Sources library with a material upload area and ingestion status](docs/screenshots/sources-library.png)
+
+The Sources page is where learners add PDFs, PowerPoint decks and videos up to 20 minutes long. Dropping a file starts ingestion automatically: Omnitutor extracts or transcribes its content, divides it into citable chunks and indexes it for retrieval. The ingested-materials list shows each file's processing status and chunk count; course topics can then be built from the available sources.
+
+### Adaptive quiz setup
+
+![Adaptive assessment setup with diagnostic, mock exam and custom quiz options](docs/screenshots/adaptive-quiz.png)
+
+The quiz setup offers three ways to practise. A **Diagnostic** samples one question per topic to establish an initial mastery estimate. A **Mock exam** draws questions across topics, emphasizing weaker areas and matching difficulty to the learner's level. A **Custom quiz** lets learners select topics and a question count. Questions are generated from course material, checked by a separate model, and tracked to avoid repeats.
+
+### Course map
+
+![Course map connecting topics and concepts, with mastery indicated by color](docs/screenshots/course-map.png)
+
+The map visualizes a course as a central node connected to its topics and the concepts within them. Mastery colors make strengths and gaps visible at a glance: green indicates stronger topics, while red marks areas that need practice. Selecting a topic helps the learner practise it; selecting a concept opens the material that teaches it, connecting the map back to source pages or slides.
+
+### Grounded tutor
+
+![Tutor answer with clickable citations beside the exact page in the source PDF](docs/screenshots/grounded-tutor.png)
+
+Learners ask a question in the tutor panel and receive an explanation grounded in retrieved course excerpts. Citation chips identify the supporting source and page; selecting one opens that location in the adjacent material viewer, as shown here with page 7 of the PDF. This side-by-side view lets learners verify an explanation against the original material while continuing the conversation.
+
+### Progress dashboard
+
+![Progress dashboard with per-topic mastery bars and recommended focus areas](docs/screenshots/progress-dashboard.png)
+
+The dashboard summarizes measured mastery for every topic and highlights focus areas that need reinforcement. Mastery changes as the learner answers quiz questions and talks with the tutor; prerequisite relationships help explain why some topics depend on others. Practice and source-page suggestions turn the mastery summary into a concrete next step.
+
+### Study hub
+
+![Study hub with shortcuts to sources, tutor, quiz, flashcards, course map and progress](docs/screenshots/study-hub.png)
+
+The study hub is the navigation point for a learner returning to a course. Its cards link directly to the source library, tutor, quizzes, flashcards, course map and progress dashboard, with short descriptions of each activity. The course summary below keeps key context—such as the number of sources and topics—visible while learners decide what to do next.
+
 ## How it works
 
 ```mermaid
